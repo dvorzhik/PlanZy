@@ -154,7 +154,7 @@ curl -s http://127.0.0.1:8000/health
 ## 9.6 Nginx как reverse proxy
 
 ```bash
-sudo cp /opt/planzy/deploy/nginx-planzy.conf /etc/nginx/sites-available/planzy
+sudo cp /opt/planzy/app/deploy/nginx-planzy.conf /etc/nginx/sites-available/planzy
 sudo ln -sf /etc/nginx/sites-available/planzy /etc/nginx/sites-enabled/planzy
 sudo rm -f /etc/nginx/sites-enabled/default
 
@@ -164,12 +164,26 @@ sudo nginx -t
 На этом этапе конфиг ссылается на ещё не существующий SSL-сертификат,
 поэтому сначала получите сертификат (шаг 9.7), а затем перезагрузите Nginx.
 
+> **Права для отдачи статики.** Каталог `/opt/planzy` закрыт для посторонних
+> (`drwxr-x--- planzy:planzy`), а Nginx работает от `www-data`. Чтобы Nginx мог
+> отдавать `favicon.ico`, `favicon.svg` и `apple-touch-icon.png` напрямую,
+> добавьте его в группу проекта **до** перезапуска сервиса:
+>
+> ```bash
+> sudo usermod -aG planzy www-data
+> sudo systemctl restart nginx
+> ```
+>
+> Без этого Nginx вернёт `403 Forbidden` на `/favicon.ico` и `/static/*`.
+> Ограничиваться `chmod o+rx /opt/planzy` не рекомендуется — доступ получат
+> все локальные пользователи.
+
 ---
 
 ## 9.7 SSL через Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d planzy.dvorzhik.site \
+sudo certbot --nginx -d planzy.duckdns.org \
     --agree-tos -m your@email.com --redirect --non-interactive
 
 # Проверка автопродления
@@ -183,20 +197,28 @@ sudo nginx -t && sudo systemctl reload nginx
 Проверьте снаружи:
 
 ```bash
-curl -sI https://planzy.dvorzhik.site/health
+curl -sI https://planzy.duckdns.org/health
 ```
+
+> **Внимание:** Certbot перезаписывает блок `server` и может потерять
+> заголовки безопасности и `client_max_body_size` из исходного конфига.
+> После выпуска сертификата сверьте их наличие:
+>
+> ```bash
+> curl -sI https://planzy.duckdns.org/ | grep -iE 'x-content-type|x-frame|referrer'
+> ```
 
 ---
 
 ## 9.8 Автоматический бэкап SQLite
 
 ```bash
-chmod +x /opt/planzy/deploy/backup.sh
-sudo mkdir -p /opt/planzy/backups
-sudo chown planzy:planzy /opt/planzy/backups
+chmod +x /opt/planzy/app/deploy/backup.sh
+sudo mkdir -p /opt/planzy/app/backups
+sudo chown planzy:planzy /opt/planzy/app/backups
 
 # Ручной прогон
-sudo -u planzy /opt/planzy/deploy/backup.sh
+sudo -u planzy /opt/planzy/app/deploy/backup.sh
 
 # Ежедневно в 03:00
 sudo crontab -e
