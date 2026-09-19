@@ -53,3 +53,8 @@ logs/
 
 # --- Временные скрипты развёртывания ---
 scripts/_remote_*.sh
+scripts/_local_*.py
+
+# --- Артефакты переноса БД ---
+*.transfer
+*.local-pretransfer
