@@ -54,6 +54,9 @@ logs/
 # --- Временные скрипты развёртывания ---
 scripts/_remote_*.sh
 scripts/_local_*.py
+scripts/_check_*.py
+pytest-out.txt
+pytest-err.txt
 
 # --- Артефакты переноса БД ---
 *.transfer

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="PlanZy">
+  <title>PlanZy</title>
+  <!-- Фирменный фон: скруглённый квадрат в цвете brand-500 (#3b6fe0) -->
+  <rect width="64" height="64" rx="14" ry="14" fill="#3b6fe0"/>
+
+  <!-- Шахматный конь (символ из шапки сайта) -->
+  <g transform="translate(32 33) scale(2.15) translate(-0.5 -0.35)">
+    <text x="0.5" y="0"
+          font-family="Georgia, 'DejaVu Serif', 'Times New Roman', serif"
+          font-size="20"
+          fill="#ffffff"
+          text-anchor="middle"
+          dominant-baseline="central">♞</text>
+  </g>
+</svg>
