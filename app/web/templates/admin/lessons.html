@@ -76,16 +76,17 @@
 
 {# ── Таблица ──────────────────────────────────────────────────────── #}
 {% if rows %}
-    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+    <p class="mb-2 text-xs text-slate-400 sm:hidden">Таблица прокручивается вбок →</p>
+    <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
         <table class="min-w-full divide-y divide-slate-200 text-sm">
             <thead class="bg-slate-50">
                 <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    <th class="px-4 py-3">Дата</th>
-                    <th class="px-4 py-3">Время</th>
-                    <th class="px-4 py-3">Ученик</th>
-                    <th class="px-4 py-3">Тема</th>
-                    <th class="px-4 py-3">Примечание</th>
-                    <th class="px-4 py-3 text-right">Действия</th>
+                    <th class="px-4 py-3 whitespace-nowrap">Дата</th>
+                    <th class="px-4 py-3 whitespace-nowrap">Время</th>
+                    <th class="px-4 py-3 whitespace-nowrap">Ученик</th>
+                    <th class="px-4 py-3 whitespace-nowrap">Тема</th>
+                    <th class="px-4 py-3 whitespace-nowrap">Примечание</th>
+                    <th class="px-4 py-3 text-right whitespace-nowrap">Действия</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -100,7 +101,7 @@
                         <td class="px-4 py-3">
                             {% if row.entity %}
                                 <a href="/admin/students/{{ row.entity.id }}"
-                                   class="font-medium text-brand-700 hover:underline">{{ row.entity.name }}</a>
+                                   class="font-medium text-brand-700 hover:underline whitespace-nowrap">{{ row.entity.name }}</a>
                             {% else %}
                                 <span class="text-slate-400">—</span>
                             {% endif %}
@@ -113,11 +114,11 @@
                         </td>
                         <td class="px-4 py-3">
                             {% if row.lesson.attendance == "present" %}
-                                <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 whitespace-nowrap">
                                     {{ row.attendance_label }}
                                 </span>
                             {% elif row.lesson.attendance %}
-                                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 whitespace-nowrap">
                                     {{ row.attendance_label }}
                                 </span>
                             {% else %}
@@ -126,7 +127,7 @@
                         </td>
                         <td class="px-4 py-3 text-right">
                             <a href="/admin/lessons/{{ row.lesson.id }}"
-                               class="text-sm font-medium text-brand-600 hover:underline">Открыть</a>
+                               class="text-sm font-medium text-brand-600 hover:underline whitespace-nowrap">Открыть</a>
                         </td>
                     </tr>
                 {% endfor %}

@@ -206,10 +206,10 @@ def _build_report(lesson: Lesson, entity: Entity, *, currency: str) -> str:
     """Собирает текст отчёта родителю по занятию.
 
     Отчёт содержит только публичные поля: тему, домашнее задание,
-    оценку и план на следующий урок. Приватные заметки тренера
-    (``internal_notes``) в отчёт не попадают никогда. Посещаемость,
-    остаток занятий и валюта в отчёт не включаются — это внутренние
-    данные тренера.
+    оценку, план на следующий урок и примечание (кто был / короткая
+    отметка). Приватные заметки тренера (``internal_notes``) в отчёт не
+    попадают никогда. Остаток занятий и валюта в отчёт не включаются —
+    это внутренние данные тренера.
 
     Args:
         lesson: Занятие, по которому строится отчёт.
@@ -230,6 +230,8 @@ def _build_report(lesson: Lesson, entity: Entity, *, currency: str) -> str:
         lines.append(f"Оценка: {lesson.rating}")
     if lesson.next_step:
         lines.append(f"План на следующий урок: {lesson.next_step}")
+    if lesson.attendance:
+        lines.append(f"Примечание: {lesson.attendance}")
 
     return "\n".join(lines)
 

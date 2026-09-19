@@ -17,13 +17,11 @@ from app.core.logging import get_logger
 from app.db.base import check_db_connection
 from app.services.dossier_service import DossierService, StudentDossier
 from app.services.schedule_service import ScheduleService
-from app.services.settings_service import TenantSettingsService
 from app.services.share_link_service import ShareLinkService
 from app.services.whatsapp_service import WhatsAppLinkService
 from app.web.dependencies import (
     get_dossier_service,
     get_schedule_service,
-    get_settings_service,
     get_share_link_service,
     get_whatsapp_service,
 )
@@ -57,7 +55,6 @@ async def _build_public_context(
     dossier: StudentDossier,
     whatsapp: WhatsAppLinkService,
     schedule_service: ScheduleService,
-    settings_service: TenantSettingsService,
 ) -> dict:
     """Готовит контекст публичной карточки родителя.
 
@@ -66,42 +63,37 @@ async def _build_public_context(
 
     Расписание берётся из таблицы ``schedule_slots`` (актуальный источник),
     а не из устаревших полей ``entities.schedule_days``/``schedule_time``.
-    Настройки тенанта дают валюту, цену занятия и порядок оплаты.
+
+    Цена занятия и порядок оплаты на карточке родителя не показываются,
+    поэтому настройки тенанта здесь не запрашиваются.
 
     Args:
         dossier: Собранное досье ученика.
         whatsapp: Сервис ссылок WhatsApp.
         schedule_service: Сервис расписания.
-        settings_service: Сервис настроек тенанта.
 
     Returns:
         Словарь с данными для шаблона ``card.html``.
     """
     entity = dossier.entity
     last = dossier.history[0] if dossier.history else None
+    # Примечание — то же поле, что тренер заполняет в карточке занятия.
+    # Для группы это список участников, для ученика — короткая отметка.
+    # Берём последнее занятие, где поле заполнено: пустое значение означает
+    # «занятие не проведено» и примечания там быть не может.
+    last_note = next((entry.attendance for entry in dossier.history if entry.attendance), None)
     slots = await schedule_service.list_slots_for_entity(
         entity.tenant_id,
         entity.id,
         only_active=True,
     )
-    tenant_settings = await settings_service.get(entity.tenant_id)
-    currency = tenant_settings.currency if tenant_settings else settings.currency
-    # Индивидуальная цена ученика важнее цены тенанта: у групп и частных
-    # учеников стоимость занятия может отличаться.
-    if entity.lesson_price is not None and entity.lesson_price > 0:
-        lesson_price = float(entity.lesson_price)
-    else:
-        lesson_price = tenant_settings.lesson_price if tenant_settings else settings.lesson_price
-    payment_instructions = tenant_settings.payment_instructions if tenant_settings else None
     return {
         "title": f"Карточка · {dossier.name}",
         "dossier": dossier,
         "entity": entity,
         "last_lesson": last,
+        "last_note": last_note,
         "slots": slots,
-        "currency": currency,
-        "lesson_price": lesson_price,
-        "payment_instructions": payment_instructions,
         "whatsapp_url": whatsapp.build_plain_link(
             "+972534766343",
             f"Здравствуйте, Александр! Пишу по занятиям ({dossier.name}).",
@@ -134,14 +126,13 @@ async def public_card(
     dossier_service: DossierService = Depends(get_dossier_service),  # noqa: B008
     whatsapp: WhatsAppLinkService = Depends(get_whatsapp_service),  # noqa: B008
     schedule_service: ScheduleService = Depends(get_schedule_service),  # noqa: B008
-    settings_service: TenantSettingsService = Depends(get_settings_service),  # noqa: B008
 ) -> HTMLResponse:
     """Публичная смарт-карточка ученика для родителя.
 
-    Показывает актуальное расписание из ``schedule_slots``,
-    последний урок, домашнее задание, архив тем, цену занятия, валюту и
-    порядок оплаты из настроек тенанта. Приватные заметки тренера не
-    отображаются.
+    Показывает актуальное расписание из ``schedule_slots``, последнее
+    занятие, домашнее задание, примечание и сводные итоги. Историю занятий
+    и оплату карточка не показывает — эти разделы остались только в досье
+    тренера. Приватные заметки тренера не отображаются.
 
     Args:
         request: Текущий HTTP-запрос.
@@ -149,7 +140,6 @@ async def public_card(
         dossier_service: Сервис сборки досье.
         whatsapp: Сервис ссылок WhatsApp.
         schedule_service: Сервис расписания.
-        settings_service: Сервис настроек тенанта.
 
     Returns:
         HTML-страница карточки или 404, если токен неизвестен.
@@ -167,7 +157,6 @@ async def public_card(
         dossier,
         whatsapp,
         schedule_service,
-        settings_service,
     )
     return templates.TemplateResponse(request=request, name="card.html", context=context)
 

@@ -205,14 +205,14 @@ class TestPublicCard:
         assert response.status_code == 200
         assert "10:00" not in response.text
 
-    async def test_card_shows_price_and_payment_instructions(
+    async def test_card_hides_price_and_payment_instructions(
         self,
         client: AsyncClient,
         repo: Repository,
         tenant_id: int,
         student,
     ) -> None:
-        """Карточка показывает цену, валюту и порядок оплаты из настроек."""
+        """Карточка родителя не показывает цену, валюту и порядок оплаты."""
         _entity, token = student
         await repo.tenants.update_settings(
             tenant_id,
@@ -225,9 +225,66 @@ class TestPublicCard:
         response = await client.get(f"/l/{token}")
 
         assert response.status_code == 200
-        assert "150" in response.text
-        assert "ILS" in response.text
-        assert "Перевод на карту 1234" in response.text
+        assert "Оплата занятий" not in response.text
+        assert "Перевод на карту 1234" not in response.text
+        assert "Стоимость занятия" not in response.text
+
+    async def test_card_hides_lesson_history(
+        self,
+        client: AsyncClient,
+        student,
+    ) -> None:
+        """Раздел «История занятий» убран из карточки родителя."""
+        _entity, token = student
+
+        response = await client.get(f"/l/{token}")
+
+        assert response.status_code == 200
+        assert "История занятий" not in response.text
+
+    async def test_card_shows_note_from_last_lesson(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        tenant_id: int,
+        student,
+    ) -> None:
+        """Примечание последнего занятия показывается родителю как есть."""
+        entity, token = student
+        await repo.lessons.create(
+            tenant_id=tenant_id,
+            entity_id=entity.id,
+            lesson_date=date(2026, 9, 17),
+            topic="Ладейные окончания",
+            attendance="Миша, Аня",
+        )
+        await repo.session.flush()
+
+        response = await client.get(f"/l/{token}")
+
+        assert response.status_code == 200
+        assert "Примечание" in response.text
+        assert "Миша, Аня" in response.text
+
+    async def test_card_has_no_note_block_without_note(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Без занятий с примечанием раздел «Примечание» не рисуется."""
+        entity = await repo.entities.create(
+            tenant_id=tenant_id,
+            name="Лев",
+            entity_type="student",
+            subject="Шахматы",
+        )
+        await repo.session.flush()
+
+        response = await client.get(f"/l/{entity.public_token}")
+
+        assert response.status_code == 200
+        assert "Примечание" not in response.text
 
     async def test_card_has_no_balance_block(
         self,

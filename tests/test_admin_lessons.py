@@ -1192,6 +1192,24 @@ class TestLessonHelpers:
         report = _build_report(lesson, entity, currency="₪")
         assert "СЕКРЕТ" not in report
 
+    def test_build_report_includes_attendance_note(self) -> None:
+        """Примечание занятия попадает в отчёт родителю."""
+        lesson = _FakeLesson(1, LESSON_DATE, entity_id=1, topic="Дроби", attendance="Аня, Марк")
+        entity = _FakeEntity(1, name="Аня", balance_lessons=7)
+
+        report = _build_report(lesson, entity, currency="₪")
+
+        assert "Примечание: Аня, Марк" in report
+
+    def test_build_report_omits_note_when_absent(self) -> None:
+        """Без примечания строка в отчёт не добавляется."""
+        lesson = _FakeLesson(1, LESSON_DATE, entity_id=1, topic="Дроби", attendance=None)
+        entity = _FakeEntity(1, name="Аня", balance_lessons=7)
+
+        report = _build_report(lesson, entity, currency="₪")
+
+        assert "Примечание" not in report
+
     def test_build_report_omits_currency(self) -> None:
         """Валюта больше не попадает в отчёт родителю."""
         lesson = _FakeLesson(1, LESSON_DATE, entity_id=1, topic="Дроби")
@@ -1199,11 +1217,11 @@ class TestLessonHelpers:
         report = _build_report(lesson, entity, currency="₪")
         assert "₪" not in report
 
-    def test_build_report_omits_attendance_and_balance(self) -> None:
-        """Посещаемость и остаток занятий убраны из отчёта."""
+    def test_build_report_omits_balance(self) -> None:
+        """Остаток занятий убран из отчёта."""
         lesson = _FakeLesson(1, LESSON_DATE, entity_id=1, topic="Дроби", attendance="Аня")
         entity = _FakeEntity(1, name="Аня", balance_lessons=7)
         report = _build_report(lesson, entity, currency="₪")
-        assert "Посещаемость" not in report
         assert "Остаток" not in report
+        assert "Посещаемость" not in report
         assert "Аня" in report
