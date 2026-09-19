@@ -21,6 +21,21 @@
     он только готовит текст, который вы можете переслать.
 </p>
 
+<div class="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+    <p>
+        Рассылка идёт автоматически:
+        <span class="font-medium text-slate-700">утром в {{ schedule_hint.morning }}</span>
+        (о занятиях на сегодня) и
+        <span class="font-medium text-slate-700">вечером в {{ schedule_hint.day_before }}</span>
+        (о занятиях на завтра).
+        Часовой пояс: {{ schedule_hint.timezone }}.
+    </p>
+    <p class="mt-1">
+        Если занятий по расписанию нет, сообщение не отправляется —
+        это нормально, а не поломка.
+    </p>
+</div>
+
 <div class="space-y-4">
     {% for rule in rules %}
     <form method="post" action="/admin/reminders/{{ rule.id }}"
@@ -77,6 +92,13 @@
             </button>
             <span class="text-xs text-slate-400">
                 Сейчас: {{ rule.human_schedule }}
+            </span>
+            <span class="text-xs {% if rule.last_sent %}text-emerald-600{% else %}text-slate-400{% endif %}">
+                {% if rule.last_sent %}
+                    Последняя отправка: {{ rule.last_sent | date_ru }}
+                {% else %}
+                    Отправок пока не было
+                {% endif %}
             </span>
         </div>
     </form>

@@ -60,17 +60,18 @@
     </label>
 
     <button type="submit"
-            class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            class="h-[38px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700">
         Показать
     </button>
 
     <a href="/admin/lessons/new"
-       class="rounded-lg border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100">
+       class="inline-flex h-[38px] items-center rounded-lg border border-brand-200 bg-brand-50 px-4 text-sm font-medium text-brand-700 hover:bg-brand-100">
         + Добавить занятие
     </a>
 
     {% if selected_entity_id or period != "month" %}
-        <a href="/admin/lessons" class="pb-2 text-sm text-slate-500 hover:underline">Сбросить</a>
+        <a href="/admin/lessons"
+           class="inline-flex h-[38px] items-center text-sm text-slate-500 hover:underline">Сбросить</a>
     {% endif %}
 </form>
 
@@ -84,8 +85,8 @@
                     <th class="px-4 py-3 whitespace-nowrap">Дата</th>
                     <th class="px-4 py-3 whitespace-nowrap">Время</th>
                     <th class="px-4 py-3 whitespace-nowrap">Ученик</th>
-                    <th class="px-4 py-3 whitespace-nowrap">Тема</th>
-                    <th class="px-4 py-3 whitespace-nowrap">Примечание</th>
+                    <th class="px-4 py-3 min-w-[12rem] w-full whitespace-nowrap">Тема</th>
+                    <th class="px-4 py-3 w-[6rem] whitespace-nowrap">Примечание</th>
                     <th class="px-4 py-3 text-right whitespace-nowrap">Действия</th>
                 </tr>
             </thead>
@@ -106,23 +107,26 @@
                                 <span class="text-slate-400">—</span>
                             {% endif %}
                         </td>
-                        <td class="px-4 py-3 text-slate-700">
+                        <td class="px-4 py-3 text-slate-700 align-top">
                             {{ row.lesson.topic or "—" }}
                             {% if row.lesson.homework %}
                                 <p class="mt-0.5 text-xs text-slate-400">ДЗ: {{ row.lesson.homework }}</p>
                             {% endif %}
                         </td>
-                        <td class="px-4 py-3">
+                        <td class="px-4 py-3 align-top">
                             {% if row.lesson.attendance == "present" %}
-                                <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 whitespace-nowrap">
+                                <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                                     {{ row.attendance_label }}
                                 </span>
                             {% elif row.lesson.attendance %}
-                                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 whitespace-nowrap">
-                                    {{ row.attendance_label }}
+                                {# Примечание — поле до 2000 символов: колонка не должна
+                                   растягиваться, поэтому текст обрезается по ширине. #}
+                                <span class="block max-w-[10rem] truncate text-xs text-slate-600"
+                                      title="{{ row.lesson.attendance }}">
+                                    {{ row.lesson.attendance }}
                                 </span>
                             {% else %}
-                                <span class="text-xs text-slate-400">не указана</span>
+                                <span class="text-xs text-slate-400">не указано</span>
                             {% endif %}
                         </td>
                         <td class="px-4 py-3 text-right">

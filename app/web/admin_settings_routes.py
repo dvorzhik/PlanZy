@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -238,8 +239,11 @@ async def reminders_page(
                 "channel": rule.channel,
                 "description": service.describe(rule),
                 "human_schedule": _human_schedule(rule),
+                "last_sent": None,
             }
         )
+
+    await _attach_last_sent(repo, tenant.id, described)
 
     return templates.TemplateResponse(
         request=request,
@@ -252,10 +256,54 @@ async def reminders_page(
             "rule_labels": REMINDER_LABELS,
             "channel_options": CHANNEL_OPTIONS,
             "preview": PREVIEW_TEMPLATE.format(count=3),
+            "schedule_hint": _schedule_hint(),
             "saved": request.query_params.get("saved") == "1",
             "error": request.query_params.get("error"),
         },
     )
+
+
+async def _attach_last_sent(
+    repo: Repository,
+    tenant_id: int,
+    described: list[dict[str, Any]],
+) -> None:
+    """Дополняет правила датой последней успешной рассылки.
+
+    Тренеру важно видеть, что рассылка действительно уходила: без этого
+    «нет напоминаний» невозможно отличить от «планировщик не работал».
+
+    Args:
+        repo: Фасад репозиториев.
+        tenant_id: Идентификатор тенанта.
+        described: Список правил для шаблона (изменяется на месте).
+    """
+    today = date.today()
+    for item in described:
+        try:
+            found = None
+            # Ищем ближайшую дату в пределах двух недель назад.
+            for offset in range(15):
+                probe = today - timedelta(days=offset)
+                if await repo.dispatch_log.was_sent(tenant_id, item["kind"], probe):
+                    found = probe
+                    break
+            item["last_sent"] = found
+        except Exception as exc:  # pragma: no cover - диагностический путь
+            logger.warning("Не удалось прочитать журнал отправок: %s", exc)
+
+
+def _schedule_hint() -> dict[str, str]:
+    """Возвращает расписание задач планировщика для подсказки в UI.
+
+    Returns:
+        Словарь с временем утренней и вечерней рассылки и часовым поясом.
+    """
+    return {
+        "morning": settings.morning_dispatch_time,
+        "day_before": settings.day_before_dispatch_time,
+        "timezone": settings.timezone,
+    }
 
 
 def _offset_days(rule: Any) -> int:

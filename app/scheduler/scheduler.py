@@ -12,8 +12,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -87,48 +88,75 @@ def create_scheduler() -> AsyncIOScheduler:
 def register_jobs(scheduler: AsyncIOScheduler, bot: Bot) -> None:
     """Регистрирует задачи в планировщике.
 
+    После регистрации логирует фактическое время следующего запуска: если
+    задача по каким-то причинам не встала в очередь, это видно в логе сразу,
+    а не только по отсутствию напоминаний.
+
     Args:
         scheduler: Планировщик APScheduler.
         bot: Экземпляр aiogram-бота для отправки напоминаний.
     """
-    scheduler.add_job(
-        _run_morning_dispatch,
-        trigger=CronTrigger(
-            hour=settings.dispatch_hour,
-            minute=settings.dispatch_minute,
-            timezone=settings.timezone,
-        ),
-        id=MORNING_DISPATCH_JOB_ID,
+    _add_job(
+        scheduler,
+        job_id=MORNING_DISPATCH_JOB_ID,
         name="Утренняя рассылка напоминаний",
-        replace_existing=True,
-        kwargs={"bot": bot},
+        func=_run_morning_dispatch,
+        hour=settings.dispatch_hour,
+        minute=settings.dispatch_minute,
+        bot=bot,
     )
-    logger.info(
-        "Задача %r зарегистрирована на %02d:%02d (%s)",
-        MORNING_DISPATCH_JOB_ID,
-        settings.dispatch_hour,
-        settings.dispatch_minute,
-        settings.timezone,
+    _add_job(
+        scheduler,
+        job_id=DAY_BEFORE_DISPATCH_JOB_ID,
+        name="Вечерняя рассылка накануне занятий",
+        func=_run_day_before_dispatch,
+        hour=settings.day_before_hour,
+        minute=settings.day_before_minute,
+        bot=bot,
     )
 
-    scheduler.add_job(
-        _run_day_before_dispatch,
+
+def _add_job(
+    scheduler: AsyncIOScheduler,
+    *,
+    job_id: str,
+    name: str,
+    func: Callable[..., Any],
+    hour: int,
+    minute: int,
+    bot: Bot,
+) -> None:
+    """Добавляет одну cron-задачу и логирует её расписание.
+
+    Args:
+        scheduler: Планировщик APScheduler.
+        job_id: Идентификатор задачи.
+        name: Человекочитаемое имя задачи.
+        func: Корутина задачи.
+        hour: Час запуска.
+        minute: Минуты запуска.
+        bot: Экземпляр aiogram-бота.
+    """
+    job = scheduler.add_job(
+        func,
         trigger=CronTrigger(
-            hour=settings.day_before_hour,
-            minute=settings.day_before_minute,
+            hour=hour,
+            minute=minute,
             timezone=settings.timezone,
         ),
-        id=DAY_BEFORE_DISPATCH_JOB_ID,
-        name="Вечерняя рассылка накануне занятий",
+        id=job_id,
+        name=name,
         replace_existing=True,
         kwargs={"bot": bot},
     )
     logger.info(
-        "Задача %r зарегистрирована на %02d:%02d (%s)",
-        DAY_BEFORE_DISPATCH_JOB_ID,
-        settings.day_before_hour,
-        settings.day_before_minute,
+        "Задача %r зарегистрирована на %02d:%02d (%s), ближайший запуск: %s",
+        job_id,
+        hour,
+        minute,
         settings.timezone,
+        # До старта планировщика job ещё не в очереди и next_run_time отсутствует.
+        getattr(job, "next_run_time", None) or "будет рассчитан при запуске",
     )
 
 

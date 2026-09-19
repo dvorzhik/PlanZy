@@ -47,12 +47,13 @@
     </label>
 
     <button type="submit"
-            class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            class="h-[38px] rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700">
         Показать
     </button>
 
     {% if filters_active %}
-        <a href="/admin/students" class="pb-2 text-sm text-slate-500 hover:underline">Сбросить</a>
+        <a href="/admin/students"
+           class="inline-flex h-[38px] items-center text-sm text-slate-500 hover:underline">Сбросить</a>
     {% endif %}
 </form>
 
