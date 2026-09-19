@@ -315,8 +315,8 @@ WAL позволяет читателям работать параллельн�
 
 ```bash
 # На сервере, от пользователя planzy
-cd /opt/planzy
-git clone <repo-url> .
+cd /opt/planzy/app
+git clone git@github.com:dvorzhik/PlanZy.git .
 python3.12 -m venv .venv && .venv/bin/pip install -e .
 cp .env.example .env && nano .env      # заполнить токены, APP_ENV=production
 .venv/bin/alembic upgrade head
@@ -327,7 +327,7 @@ sudo cp deploy/planzy.service /etc/systemd/system/
 sudo systemctl enable --now planzy
 sudo cp deploy/nginx-planzy.conf /etc/nginx/sites-available/planzy
 sudo ln -sf /etc/nginx/sites-available/planzy /etc/nginx/sites-enabled/planzy
-sudo certbot --nginx -d planzy.dvorzhik.site
+sudo certbot --nginx -d planzy.duckdns.org
 ```
 
 ## Лицензия
