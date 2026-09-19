@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+    {# --- Шапка: имя ученика --- #}
+    <section class="rounded-2xl bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <p class="text-xs uppercase tracking-wide text-slate-400">
+                    {{ "Группа" if dossier.is_group else "Ученик" }}
+                </p>
+                <h1 class="mt-1 text-2xl font-bold text-slate-900">{{ dossier.name }}</h1>
+                <p class="mt-1 text-sm text-slate-500">{{ entity.subject }}</p>
+            </div>
+        </div>
+
+        {% if slots %}
+        <div class="mt-4 border-t border-slate-100 pt-4">
+            <p class="text-xs uppercase tracking-wide text-slate-400">Расписание</p>
+            <ul class="mt-2 space-y-1.5">
+                {% for slot in slots %}
+                <li class="flex items-center justify-between gap-3 text-sm">
+                    <span class="font-medium text-slate-700">
+                        {{ {"mon":"Понедельник","tue":"Вторник","wed":"Среда","thu":"Четверг","fri":"Пятница","sat":"Суббота","sun":"Воскресенье"}.get(slot.weekday, slot.weekday) }}
+                    </span>
+                    <span class="text-slate-500">
+                        {{ slot.start_time }}{% if slot.duration_min %} · {{ slot.duration_min }} мин{% endif %}{% if slot.location %} · {{ slot.location }}{% endif %}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </section>
+
+    {# --- Последний урок --- #}
+    {% if last_lesson %}
+    <section class="rounded-2xl bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Последнее занятие</h2>
+            <span class="text-xs text-slate-400">
+                {{ last_lesson.lesson_date | date_ru }}
+            </span>
+        </div>
+
+        <p class="mt-3 text-base font-medium text-slate-900">{{ last_lesson.topic }}</p>
+
+        {% if last_lesson.rating %}
+        <div class="mt-2 flex items-center gap-1">
+            {% for i in range(1, 6) %}
+                <span class="{{ 'text-amber-400' if i <= last_lesson.rating else 'text-slate-200' }}">★</span>
+            {% endfor %}
+            <span class="ml-1 text-xs text-slate-500">{{ last_lesson.rating }}/5</span>
+        </div>
+        {% endif %}
+
+        {% if last_lesson.homework %}
+        <div class="mt-4 rounded-xl bg-amber-50 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Домашнее задание</p>
+            <p class="mt-1 whitespace-pre-line text-sm text-amber-900">{{ last_lesson.homework }}</p>
+        </div>
+        {% endif %}
+
+        {% if last_lesson.next_step %}
+        <div class="mt-3 rounded-xl bg-brand-50 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">План на следующий урок</p>
+            <p class="mt-1 whitespace-pre-line text-sm text-brand-700">{{ last_lesson.next_step }}</p>
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {# --- Архив тем --- #}
+    {% if dossier.history | length > 1 %}
+    <section class="rounded-2xl bg-white p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">История занятий</h2>
+        <ol class="mt-3 space-y-3">
+            {% for entry in dossier.history[1:] %}
+            <li class="border-l-2 border-slate-100 pl-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs text-slate-400">{{ entry.lesson_date | date_ru }}</span>
+                    {% if entry.rating %}
+                        <span class="text-xs text-amber-500">{{ "★" * entry.rating }}</span>
+                    {% endif %}
+                </div>
+                <p class="text-sm text-slate-700">{{ entry.topic }}</p>
+            </li>
+            {% endfor %}
+        </ol>
+    </section>
+    {% endif %}
+
+    {# --- Оплата: цена, валюта, порядок оплаты --- #}
+    {% if lesson_price or payment_instructions %}
+    <section class="rounded-2xl bg-white p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Оплата занятий</h2>
+        {% if lesson_price %}
+        <p class="mt-3 text-base text-slate-900">
+            Стоимость занятия:
+            <span class="font-semibold">{{ lesson_price | money }} {{ currency }}</span>
+        </p>
+        {% endif %}
+        {% if payment_instructions %}
+        <div class="mt-3 rounded-xl bg-slate-50 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Как оплатить</p>
+            <p class="mt-1 whitespace-pre-line text-sm text-slate-700">{{ payment_instructions }}</p>
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {# --- Итоги --- #}
+    <section class="grid grid-cols-2 gap-3">
+        <div class="rounded-2xl bg-white p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-slate-900">{{ dossier.lessons_count }}</p>
+            <p class="text-xs text-slate-500">занятий всего</p>
+        </div>
+        <div class="rounded-2xl bg-white p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-slate-900">
+                {{ dossier.average_rating if dossier.average_rating is not none else "—" }}
+            </p>
+            <p class="text-xs text-slate-500">средняя оценка</p>
+        </div>
+    </section>
+
+    {# --- Кнопка WhatsApp --- #}
+    {% if has_phone %}
+    <a href="{{ whatsapp_url }}" target="_blank" rel="noopener"
+       class="flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-base font-semibold text-white shadow-sm active:bg-emerald-600">
+        <span>📲</span> Написать тренеру в WhatsApp
+    </a>
+    {% endif %}
+
+</div>
+{% endblock %}

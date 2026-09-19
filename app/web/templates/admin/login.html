@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title or "Вход в кабинет" }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-md">
+    <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-4 flex items-center gap-3">
+            <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-xl">🔒</span>
+            <h1 class="text-lg font-semibold text-slate-800">{{ title or "Вход в кабинет" }}</h1>
+        </div>
+
+        <p class="text-sm leading-relaxed text-slate-600">
+            {{ message or "Ссылка недействительна или устарела." }}
+        </p>
+
+        <div class="mt-5 rounded-xl bg-slate-50 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Как получить доступ</p>
+            <ol class="mt-2 list-decimal space-y-1 pl-4 text-sm text-slate-600">
+                <li>Откройте Telegram-бота <span class="font-medium">{{ bot_username or "@dvorzhik_planzy_bot" }}</span>.</li>
+                <li>Отправьте команду <code class="rounded bg-slate-200 px-1.5 py-0.5 text-xs">/admin</code>.</li>
+                <li>Перейдите по ссылке, которую пришлёт бот.</li>
+            </ol>
+        </div>
+
+        <p class="mt-4 text-xs text-slate-400">
+            Ссылка персональная: не пересылайте её другим людям.
+        </p>
+    </div>
+</div>
+{% endblock %}

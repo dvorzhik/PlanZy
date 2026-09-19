@@ -1,0 +1,128 @@
+{% extends "admin/base.html" %}
+
+{% block heading %}{% if entity %}Редактирование{% else %}Новый ученик{% endif %}{% endblock %}
+{% block subheading %}
+{% if entity %}{{ entity.name }}{% else %}Заполните имя и тип — остальное можно уточнить позже{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+    {{ error }}
+</div>
+{% endif %}
+
+<form method="post"
+      action="{% if entity %}/admin/students/{{ entity.id }}{% else %}/admin/students{% endif %}"
+      class="space-y-6">
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label class="block sm:col-span-2">
+                <span class="text-sm font-medium text-slate-700">Имя или название группы</span>
+                <input type="text" name="name" required maxlength="255"
+                       value="{{ entity.name if entity else '' }}"
+                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                       placeholder="Например: Миша или Группа «Вторник 17:30»">
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Тип</span>
+                <select name="entity_type"
+                        class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+                    <option value="student"
+                            {% if not entity or entity.entity_type == "student" %}selected{% endif %}>
+                        Ученик
+                    </option>
+                    <option value="group"
+                            {% if entity and entity.entity_type == "group" %}selected{% endif %}>
+                        Группа
+                    </option>
+                </select>
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Предмет</span>
+                <input type="text" name="subject" maxlength="255"
+                       value="{{ entity.subject if entity else 'Шахматы' }}"
+                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+            </label>
+
+            <label class="block sm:col-span-2">
+                <span class="text-sm font-medium text-slate-700">Телефон родителя (WhatsApp)</span>
+                <input type="tel" name="parent_phone" maxlength="32"
+                       value="{{ entity.parent_phone or '' if entity else '' }}"
+                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                       placeholder="050-123-45-67">
+                <span class="mt-1 block text-xs text-slate-400">
+                    Можно вводить в любом виде — номер сохранится в формате 972XXXXXXXXX.
+                </span>
+            </label>
+
+            <label class="block sm:col-span-2" data-members-field
+                   {% if not entity or entity.entity_type != "group" %}hidden{% endif %}>
+                <span class="text-sm font-medium text-slate-700">Участники группы</span>
+                <textarea name="members" rows="4" maxlength="2000"
+                          class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                          placeholder="Миша, Аня, Давид — по одному имени в строке или через запятую">{{ entity.members or '' if entity else '' }}</textarea>
+                <span class="mt-1 block text-xs text-slate-400">
+                    Имена можно разделять запятыми или переносами строк. Они подставляются
+                    в примечание при вводе итогов занятия.
+                </span>
+            </label>
+
+            <label class="block sm:col-span-2" data-chat-field
+                   {% if not entity or entity.entity_type != "group" %}hidden{% endif %}>
+                <span class="text-sm font-medium text-slate-700">Ссылка на чат WhatsApp</span>
+                <input type="url" name="whatsapp_chat_url" maxlength="512"
+                       value="{{ entity.whatsapp_chat_url or '' if entity else '' }}"
+                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                       placeholder="https://chat.whatsapp.com/...">
+                <span class="mt-1 block text-xs text-slate-400">
+                    Приглашение в групповой чат. Кнопка «WhatsApp» в карточке группы
+                    и в карточке занятия будет вести прямо в этот чат.
+                </span>
+            </label>
+
+            <label class="block sm:col-span-2">
+                <span class="text-sm font-medium text-slate-700">Цена занятия</span>
+                <input type="number" name="lesson_price" step="0.01" min="0.01" max="100000"
+                       value="{{ entity.lesson_price if entity and entity.lesson_price else '' }}"
+                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                       placeholder="Как в настройках">
+                <span class="mt-1 block text-xs text-slate-400">
+                    Индивидуальная цена для этого ученика или группы. Оставьте пустым,
+                    чтобы использовать общую цену из настроек.
+                </span>
+            </label>
+        </div>
+    </section>
+
+    <div class="flex items-center gap-3">
+        <button type="submit"
+                class="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
+            {% if entity %}Сохранить{% else %}Создать{% endif %}
+        </button>
+        <a href="{% if entity %}/admin/students/{{ entity.id }}{% else %}/admin/students{% endif %}"
+           class="text-sm text-slate-500 hover:text-slate-700">Отмена</a>
+    </div>
+</form>
+
+<script>
+    // Поля «Участники группы» и «Ссылка на чат WhatsApp» — только для типа «Группа».
+    (function () {
+        const kindSelect = document.querySelector('select[name="entity_type"]');
+        const groupFields = document.querySelectorAll('[data-members-field], [data-chat-field]');
+        if (!kindSelect || !groupFields.length) {
+            return;
+        }
+        const sync = () => {
+            const isGroup = kindSelect.value === 'group';
+            groupFields.forEach(function (field) {
+                field.hidden = !isGroup;
+            });
+        };
+        kindSelect.addEventListener('change', sync);
+        sync();
+    })();
+</script>
+{% endblock %}

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{% block title %}{{ title or "Кабинет тренера" }}{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef4ff',
+                            100: '#d9e6ff',
+                            500: '#3b6fe0',
+                            600: '#2f5cc4',
+                            700: '#274ba1',
+                        },
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                    },
+                },
+            },
+        };
+    </script>
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-800 antialiased">
+<div class="flex min-h-screen flex-col lg:flex-row">
+
+    {# ── Сайдбар с разделами кабинета ─────────────────────────────── #}
+    <aside class="w-full shrink-0 border-b border-slate-200 bg-white lg:w-60 lg:border-b-0 lg:border-r">
+        <div class="flex items-center gap-2 px-4 py-4 font-semibold text-brand-700">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 text-lg text-white">♞</span>
+            <span>{{ app_name }}</span>
+        </div>
+
+        <nav class="flex flex-wrap gap-1 px-2 pb-3 lg:flex-col lg:pb-4">
+            {% set nav_items = [
+                ("/admin", "Дашборд", "dashboard"),
+                ("/admin/students", "Ученики", "students"),
+                ("/admin/schedule", "Расписание", "schedule"),
+                ("/admin/lessons", "Занятия", "lessons"),
+                ("/admin/settings", "Настройки", "settings"),
+                ("/admin/reminders", "Напоминания", "reminders"),
+            ] %}
+            {% for href, label, key in nav_items %}
+                <a href="{{ href }}"
+                   class="rounded-lg px-3 py-2 text-sm font-medium transition
+                          {% if active == key %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-100{% endif %}">
+                    {{ label }}
+                </a>
+            {% endfor %}
+        </nav>
+
+        <div class="border-t border-slate-200 px-4 py-3">
+            <p class="truncate text-xs text-slate-400">{{ tenant.name if tenant else "" }}</p>
+            <form method="post" action="/admin/logout" class="mt-2">
+                <button type="submit"
+                        class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100">
+                    Выйти
+                </button>
+            </form>
+        </div>
+    </aside>
+
+    {# ── Основная область ─────────────────────────────────────────── #}
+    <div class="flex min-w-0 flex-1 flex-col">
+        <header class="border-b border-slate-200 bg-white px-4 py-3 lg:px-6 flex justify-between items-center flex-wrap gap-2">
+            <div>
+                <h1 class="text-lg font-semibold text-slate-800">{% block heading %}{{ title }}{% endblock %}</h1>
+                {% block subheading %}{% endblock %}
+            </div>
+            <div>
+                {% block header_actions %}{% endblock %}
+            </div>
+        </header>
+
+        <main class="flex-1 px-4 py-5 lg:px-6">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="px-4 pb-6 pt-2 text-center text-xs text-slate-400 lg:px-6">
+            {{ app_name }} · кабинет доступен только по секретной ссылке
+        </footer>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="rounded-2xl bg-white p-8 shadow-sm text-center">
+    <p class="text-5xl">🔍</p>
+    <h1 class="mt-4 text-xl font-bold text-slate-900">{{ title }}</h1>
+    <p class="mt-2 text-sm text-slate-500">{{ message }}</p>
+    <a href="/"
+       class="mt-6 inline-flex items-center justify-center rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white active:bg-brand-600">
+        На главную
+    </a>
+</div>
+{% endblock %}

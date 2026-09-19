@@ -1,0 +1,46 @@
+[Unit]
+Description=PlanZy — ассистент тренера (FastAPI + aiogram + APScheduler)
+Documentation=https://planzy.dvorzhik.site
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=planzy
+Group=planzy
+WorkingDirectory=/opt/planzy
+
+# Окружение: .env читается приложением через pydantic-settings,
+# здесь задаём только то, что нужно самому процессу.
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+# Запуск через uvicorn: единый процесс (веб + бот + планировщик).
+ExecStart=/opt/planzy/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 1 \
+    --log-config /dev/null \
+    --no-access-log
+
+# Graceful shutdown: даём время закрыть polling, планировщик и БД.
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+Restart=always
+RestartSec=5
+
+# Логи уходят в journald (journalctl -u planzy).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=planzy
+
+# --- Ограничения безопасности ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/planzy
+
+[Install]
+WantedBy=multi-user.target

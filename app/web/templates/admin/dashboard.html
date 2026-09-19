@@ -1,0 +1,97 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Кабинет тренера{% endblock %}
+{% block heading %}Сводка на сегодня{% endblock %}
+{% block subheading %}
+    <p class="mt-0.5 text-sm text-slate-500">{{ today | date_ru }}</p>
+{% endblock %}
+
+{% block content %}
+{# ── Плитки со сводкой ────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <a href="/admin/students?kind=student"
+       class="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-300 hover:shadow">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Ученики</p>
+        <p class="mt-1 text-3xl font-semibold text-slate-800">{{ students_count }}</p>
+    </a>
+
+    <a href="/admin/students?kind=group"
+       class="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-300 hover:shadow">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Группы</p>
+        <p class="mt-1 text-3xl font-semibold text-slate-800">{{ groups_count }}</p>
+    </a>
+
+    <a href="/admin/schedule"
+       class="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-300 hover:shadow">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Занятий сегодня</p>
+        <p class="mt-1 text-3xl font-semibold text-brand-700">{{ today_count }}</p>
+    </a>
+
+    <a href="/admin/schedule"
+       class="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-300 hover:shadow">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Занятий завтра</p>
+        <p class="mt-1 text-3xl font-semibold text-brand-700">{{ tomorrow_count }}</p>
+    </a>
+</div>
+
+{# ── Сетка занятий сегодня и завтра ───────────────────────────────── #}
+<div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+    {# Занятия сегодня #}
+    <section>
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Занятия сегодня</h2>
+            <span class="text-xs text-slate-400">{{ today | date_ru }}</span>
+        </div>
+
+        {% if today_lessons %}
+            <ul class="divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                {% for lesson in today_lessons %}
+                    <li class="flex items-center gap-4 px-4 py-3">
+                        <span class="w-14 shrink-0 text-sm font-semibold text-brand-700">{{ lesson.start_time }}</span>
+                        <span class="min-w-0 flex-1 truncate text-sm text-slate-700">{{ lesson.entity_name }}</span>
+                        {% if lesson.location %}
+                            <span class="shrink-0 text-xs text-slate-400">{{ lesson.location }}</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+                <p class="text-sm text-slate-500">На сегодня занятий нет.</p>
+                <a href="/admin/schedule" class="mt-2 inline-block text-sm font-medium text-brand-600 hover:underline">
+                    Настроить расписание
+                </a>
+            </div>
+        {% endif %}
+    </section>
+
+    {# Занятия завтра #}
+    <section>
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Занятия завтра</h2>
+            <span class="text-xs text-slate-400">{{ tomorrow | date_ru }}</span>
+        </div>
+
+        {% if tomorrow_lessons %}
+            <ul class="divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                {% for lesson in tomorrow_lessons %}
+                    <li class="flex items-center gap-4 px-4 py-3">
+                        <span class="w-14 shrink-0 text-sm font-semibold text-brand-700">{{ lesson.start_time }}</span>
+                        <span class="min-w-0 flex-1 truncate text-sm text-slate-700">{{ lesson.entity_name }}</span>
+                        {% if lesson.location %}
+                            <span class="shrink-0 text-xs text-slate-400">{{ lesson.location }}</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+                <p class="text-sm text-slate-500">На завтра занятий нет.</p>
+                <a href="/admin/schedule" class="mt-2 inline-block text-sm font-medium text-brand-600 hover:underline">
+                    Настроить расписание
+                </a>
+            </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

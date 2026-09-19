@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="rounded-2xl bg-white p-8 shadow-sm text-center">
+    <p class="text-5xl">⏳</p>
+    <h1 class="mt-4 text-xl font-bold text-slate-900">{{ title }}</h1>
+    <p class="mt-2 text-sm text-slate-500">{{ reason }}</p>
+    {% if expires_at %}
+    <p class="mt-1 text-xs text-slate-400">Ссылка действовала до {{ expires_at | date_ru }}.</p>
+    {% endif %}
+    {% if entity %}
+    <p class="mt-1 text-sm text-slate-500">
+        Занятие ученика «{{ entity.name }}». Попросите тренера прислать новую ссылку.
+    </p>
+    {% endif %}
+    <a href="/"
+       class="mt-6 inline-flex items-center justify-center rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white active:bg-brand-600">
+        На главную
+    </a>
+</div>
+{% endblock %}

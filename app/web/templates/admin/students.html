@@ -1,0 +1,147 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Ученики{% endblock %}
+{% block heading %}Ученики и группы{% endblock %}
+
+{% block header_actions %}
+    <a href="/admin/students/new"
+       class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        + Новый ученик
+    </a>
+{% endblock %}
+
+{% block content %}
+{# ── Месячные показатели ─────────────────────────────────────────── #}
+<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Оплаты от учеников за месяц</p>
+        <p class="mt-1 text-2xl font-bold text-emerald-600">{{ total_paid_students | money }} {{ currency }}</p>
+    </div>
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Долг по группам за месяц</p>
+        <p class="mt-1 text-2xl font-bold {% if total_debt_groups > 0 %}text-rose-600{% else %}text-emerald-600{% endif %}">
+            {{ total_debt_groups | money }} {{ currency }}
+        </p>
+    </div>
+</div>
+
+{# ── Фильтры ──────────────────────────────────────────────────────── #}
+<form method="get" action="/admin/students" class="mb-4 flex flex-wrap items-end gap-3">
+    <label class="flex flex-col gap-1">
+        <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Тип</span>
+        <select name="kind" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="" {% if not filters.kind %}selected{% endif %}>Все</option>
+            <option value="student" {% if filters.kind == "student" %}selected{% endif %}>Ученики</option>
+            <option value="group" {% if filters.kind == "group" %}selected{% endif %}>Группы</option>
+        </select>
+    </label>
+
+    <label class="flex flex-col gap-1">
+        <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">День недели</span>
+        <select name="weekday" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="" {% if not filters.weekday %}selected{% endif %}>Любой</option>
+            {% for code, label in weekday_options %}
+                <option value="{{ code }}" {% if filters.weekday == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </label>
+
+    <button type="submit"
+            class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        Показать
+    </button>
+
+    {% if filters_active %}
+        <a href="/admin/students" class="pb-2 text-sm text-slate-500 hover:underline">Сбросить</a>
+    {% endif %}
+</form>
+
+{# ── Таблица ──────────────────────────────────────────────────────── #}
+{% if entities %}
+    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50">
+                <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th class="px-4 py-3">Имя</th>
+                    <th class="px-4 py-3">Расписание</th>
+                    <th class="px-4 py-3 text-right">За месяц</th>
+                    <th class="px-4 py-3 text-right">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for entity in entities %}
+                    <tr class="hover:bg-slate-50">
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-2">
+                                <span>{{ "👥" if entity.is_group else "👤" }}</span>
+                                <a href="/admin/students/{{ entity.id }}"
+                                   class="font-medium text-brand-700 hover:underline">{{ entity.name }}</a>
+                            </div>
+                            {% if entity.subject %}
+                                <p class="mt-0.5 text-xs text-slate-400">{{ entity.subject }}</p>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-slate-600">
+                            {% if schedule_by_entity.get(entity.id) %}
+                                {{ schedule_by_entity[entity.id] }}
+                            {% else %}
+                                <span class="text-slate-400">не задано</span>
+                            {% endif %}
+                        </td>
+                        {% set monthly = monthly_by_entity.get(entity.id) %}
+                        <td class="px-4 py-3 text-right">
+                            {% if entity.is_group %}
+                                {# Группа: показываем долг за текущий месяц. #}
+                                {% if monthly %}
+                                    <span class="font-medium {% if monthly.debt > 0 %}text-rose-600{% else %}text-emerald-600{% endif %}">
+                                        {{ monthly.debt | money }} {{ currency }}
+                                    </span>
+                                    <p class="mt-0.5 text-xs text-slate-400">
+                                        {{ monthly.conducted }} зан. · оплачено {{ monthly.paid | money }}
+                                    </p>
+                                {% else %}
+                                    <span class="text-slate-400">—</span>
+                                {% endif %}
+                            {% else %}
+                                {# Ученик: показываем оплаченную сумму за месяц. #}
+                                {% if monthly %}
+                                    <span class="font-medium {% if monthly.paid > 0 %}text-emerald-600{% elif monthly.conducted > 0 %}text-rose-600{% else %}text-slate-700{% endif %}">
+                                        {{ monthly.paid | money }} {{ currency }}
+                                    </span>
+                                    <p class="mt-0.5 text-xs text-slate-400">
+                                        {% if monthly.conducted %}
+                                            {{ monthly.conducted }} зан. · начислено {{ monthly.charged | money }}
+                                        {% else %}
+                                            занятий не было
+                                        {% endif %}
+                                    </p>
+                                {% else %}
+                                    <span class="text-slate-400">—</span>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <a href="/admin/students/{{ entity.id }}"
+                               class="text-sm font-medium text-brand-600 hover:underline">Открыть</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center">
+        {% if filters_active %}
+            <p class="text-sm text-slate-500">По этим условиям никого не нашлось.</p>
+            <a href="/admin/students" class="mt-2 inline-block text-sm font-medium text-brand-600 hover:underline">
+                Сбросить фильтры
+            </a>
+        {% else %}
+            <p class="text-sm text-slate-500">Пока нет ни одного ученика.</p>
+            <p class="mt-1 text-xs text-slate-400">
+                Надиктуйте первый урок боту — ученик появится здесь автоматически.
+            </p>
+        {% endif %}
+    </div>
+{% endif %}
+{% endblock %}

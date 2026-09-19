@@ -1,0 +1,143 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Новое занятие{% endblock %}
+{% block heading %}Новое занятие{% endblock %}
+{% block subheading %}
+    <p class="mt-0.5 text-sm text-slate-500">
+        Заполните то, что помните. Обязательны только ученик и тема.
+    </p>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+    <div class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        {{ error }}
+    </div>
+{% endif %}
+
+<form method="post" action="/admin/lessons" class="space-y-6">
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Основное</h2>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Ученик или группа</span>
+                <select name="entity_id" required
+                        class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                    <option value="">— выберите —</option>
+                    {% for entity in entities %}
+                        <option value="{{ entity.id }}"
+                                {% if selected_entity_id == entity.id %}selected{% endif %}>
+                            {{ entity.name }}{% if entity.is_group %} (группа){% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Дата занятия</span>
+                <input type="date" name="lesson_date" value="{{ today.isoformat() }}"
+                       class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Время начала</span>
+                <input type="time" name="start_time"
+                       class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            </label>
+
+            <label class="block sm:col-span-2">
+                <span class="text-sm font-medium text-slate-700">Тема занятия</span>
+                <input type="text" name="topic" maxlength="2000"
+                       placeholder="Например: итальянская партия, разбор дебюта"
+                       class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            </label>
+
+            <label class="block sm:col-span-2">
+                <span class="text-sm font-medium text-slate-700">Примечание</span>
+                <textarea name="attendance" rows="3" maxlength="2000"
+                          data-attendance-input
+                          class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{{ lesson.attendance if lesson and lesson.attendance else '' }}</textarea>
+                <span class="mt-1 block text-xs text-slate-400">
+                    Для группы подставляются все участники — удалите тех, кого не было.
+                </span>
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Оценка</span>
+                <input type="text" name="rating" maxlength="32"
+                       placeholder="Например: 5, отлично"
+                       class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            </label>
+        </div>
+    </section>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Для родителя</h2>
+        <p class="mt-1 text-xs text-slate-400">
+            Эти поля попадут в отчёт, который можно отправить родителю.
+        </p>
+
+        <div class="mt-4 space-y-4">
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Домашнее задание</span>
+                <textarea name="homework" rows="3"
+                          placeholder="Что задано на следующий раз"
+                          class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"></textarea>
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">План на следующий урок</span>
+                <textarea name="next_step" rows="2"
+                          placeholder="Над чем работаем дальше"
+                          class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"></textarea>
+            </label>
+        </div>
+    </section>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Только для тренера</h2>
+        <p class="mt-1 text-xs text-slate-400">
+            Эти заметки никогда не попадают в отчёт родителю.
+        </p>
+
+        <label class="mt-4 block">
+            <span class="text-sm font-medium text-slate-700">Приватные заметки</span>
+            <textarea name="internal_notes" rows="3"
+                      placeholder="Наблюдения, которые важны только вам"
+                      class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"></textarea>
+        </label>
+    </section>
+
+    <div class="flex items-center gap-3">
+        <button type="submit"
+                class="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
+            Сохранить занятие
+        </button>
+        <a href="/admin/lessons" class="text-sm text-slate-500 hover:underline">Отмена</a>
+    </div>
+</form>
+
+<script>
+    // Автоподстановка участников группы в поле «Примечание».
+    (function () {
+        const membersByEntity = {{ members_by_entity | tojson }};
+        const entitySelect = document.querySelector('select[name="entity_id"]');
+        const attendanceInput = document.querySelector('[data-attendance-input]');
+        if (!entitySelect || !attendanceInput) {
+            return;
+        }
+        let lastAutoValue = attendanceInput.value;
+        const sync = () => {
+            const members = membersByEntity[entitySelect.value] || '';
+            // Подставляем только если поле пустое или содержит прошлую автоподстановку.
+            if (attendanceInput.value === '' || attendanceInput.value === lastAutoValue) {
+                attendanceInput.value = members;
+                lastAutoValue = members;
+            }
+        };
+        entitySelect.addEventListener('change', sync);
+        sync();
+    })();
+</script>
+{% endblock %}

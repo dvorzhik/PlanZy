@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+    {# --- Шапка --- #}
+    <section class="rounded-2xl bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <p class="text-xs uppercase tracking-wide text-slate-400">
+                    Досье · {{ "Группа" if dossier.is_group else "Ученик" }}
+                </p>
+                <h1 class="mt-1 text-2xl font-bold text-slate-900">{{ dossier.name }}</h1>
+                <p class="mt-1 text-sm text-slate-500">{{ entity.subject }}</p>
+            </div>
+        </div>
+    </section>
+
+    {# --- Ключевые метрики --- #}
+    <section class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-2xl bg-white p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-slate-900">{{ dossier.lessons_count }}</p>
+            <p class="text-xs text-slate-500">занятий</p>
+        </div>
+        <div class="rounded-2xl bg-white p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-slate-900">
+                {{ dossier.average_rating if dossier.average_rating is not none else "—" }}
+            </p>
+            <p class="text-xs text-slate-500">средний балл</p>
+        </div>
+        <div class="rounded-2xl bg-white p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold
+                {{ 'text-emerald-600' if dossier.rating_trend == 'up' else ('text-rose-600' if dossier.rating_trend == 'down' else 'text-slate-900') }}">
+                {% if dossier.rating_trend == 'up' %}↑{% elif dossier.rating_trend == 'down' %}↓{% elif dossier.rating_trend == 'flat' %}→{% else %}—{% endif %}
+            </p>
+            <p class="text-xs text-slate-500">
+                {{ trend_labels.get(dossier.rating_trend, "нет данных") }}
+            </p>
+        </div>
+        <div class="rounded-2xl bg-white p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-slate-900">{{ dossier.total_paid | money }}</p>
+            <p class="text-xs text-slate-500">оплачено</p>
+        </div>
+    </section>
+
+    {# --- План на следующий урок --- #}
+    {% if dossier.last_next_step %}
+    <section class="rounded-2xl bg-brand-50 p-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-brand-700">План на следующий урок</h2>
+        <p class="mt-2 whitespace-pre-line text-sm text-brand-700">{{ dossier.last_next_step }}</p>
+    </section>
+    {% endif %}
+
+    {# --- Слабые темы --- #}
+    {% if dossier.weak_topics %}
+    <section class="rounded-2xl bg-rose-50 p-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-rose-700">Требует проработки</h2>
+        <ul class="mt-2 space-y-1">
+            {% for topic in dossier.weak_topics %}
+                <li class="text-sm text-rose-800">• {{ topic }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    {# --- Последний платёж --- #}
+    {% if dossier.last_payment %}
+    <section class="rounded-2xl bg-white p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Последняя оплата</h2>
+        <div class="mt-2 flex items-center justify-between">
+            <span class="text-sm text-slate-700">{{ dossier.last_payment.payment_date | date_ru }}</span>
+            <span class="text-base font-semibold text-slate-900">
+                {{ dossier.last_payment.amount | money(dossier.last_payment.currency) }}
+            </span>
+        </div>
+        {% if dossier.last_payment.lessons_added %}
+            <p class="mt-1 text-xs text-slate-500">
+                +{{ dossier.last_payment.lessons_added }} {{ dossier.last_payment.lessons_added | pluralize_lessons }}
+            </p>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {# --- История тем --- #}
+    <section class="rounded-2xl bg-white p-5 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">История занятий</h2>
+
+        {% if dossier.history %}
+        <ol class="mt-3 space-y-4">
+            {% for entry in dossier.history %}
+            <li class="border-l-2 border-slate-100 pl-4">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-xs text-slate-400">
+                        {{ entry.lesson_date | date_ru }} · {{ entry.lesson_date | weekday_ru }}
+                    </span>
+                    <div class="flex items-center gap-2">
+                        {% if entry.rating %}
+                            <span class="text-xs text-amber-500">{{ "★" * entry.rating }}</span>
+                        {% endif %}
+                        <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                            {{ attendance_labels.get(entry.attendance, entry.attendance) }}
+                        </span>
+                    </div>
+                </div>
+                <p class="mt-1 text-sm font-medium text-slate-800">{{ entry.topic }}</p>
+                {% if entry.homework %}
+                    <p class="mt-1 text-xs text-slate-500">ДЗ: {{ entry.homework }}</p>
+                {% endif %}
+                {% if entry.next_step %}
+                    <p class="mt-1 text-xs text-brand-600">Далее: {{ entry.next_step }}</p>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+            <p class="mt-3 text-sm text-slate-400">Занятий пока нет.</p>
+        {% endif %}
+    </section>
+
+    {# --- Действия --- #}
+    <div class="flex flex-col gap-3 sm:flex-row">
+        {% if has_phone %}
+        <a href="{{ whatsapp_url }}" target="_blank" rel="noopener"
+           class="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-base font-semibold text-white shadow-sm active:bg-emerald-600">
+            <span>📲</span> Написать родителю
+        </a>
+        {% endif %}
+        <a href="/l/{{ entity.public_token }}"
+           class="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-base font-semibold text-slate-700 shadow-sm active:bg-slate-50">
+            <span>🎫</span> Публичная карточка
+        </a>
+    </div>
+
+</div>
+{% endblock %}

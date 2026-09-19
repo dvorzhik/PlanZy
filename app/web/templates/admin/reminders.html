@@ -1,0 +1,105 @@
+{% extends "admin/base.html" %}
+
+{% block heading %}Напоминания{% endblock %}
+{% block subheading %}Когда и о чём бот напомнит вам в Telegram{% endblock %}
+
+{% block content %}
+{% if saved %}
+<div class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+    Правило сохранено.
+</div>
+{% endif %}
+
+{% if error %}
+<div class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+    {{ error }}
+</div>
+{% endif %}
+
+<p class="mb-4 text-sm text-slate-500">
+    Напоминания приходят вам в Telegram. Бот не пишет родителям сам —
+    он только готовит текст, который вы можете переслать.
+</p>
+
+<div class="space-y-4">
+    {% for rule in rules %}
+    <form method="post" action="/admin/reminders/{{ rule.id }}"
+          class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="text-base font-semibold text-slate-900">
+                    {{ rule_labels.get(rule.kind, rule.kind) }}
+                </h2>
+                <p class="mt-1 text-sm text-slate-500">{{ rule.description }}</p>
+            </div>
+            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="enabled" value="1"
+                       {% if rule.enabled %}checked{% endif %}
+                       class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                Включено
+            </label>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Время отправки</span>
+                <input type="time" name="send_at" value="{{ rule.send_at }}"
+                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Сдвиг, дней</span>
+                <input type="number" name="offset_days" step="1" min="0" max="30"
+                       value="{{ rule.offset_days }}"
+                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+                <span class="mt-1 block text-xs text-slate-400">
+                    Для «за день» — 1, для «утром в день занятия» — 0.
+                </span>
+            </label>
+
+            <label class="block">
+                <span class="text-sm font-medium text-slate-700">Канал</span>
+                <select name="channel"
+                        class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+                    {% for value, label in channel_options %}
+                    <option value="{{ value }}" {% if rule.channel == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+
+        <div class="mt-4 flex items-center gap-3">
+            <button type="submit"
+                    class="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
+                Сохранить
+            </button>
+            <span class="text-xs text-slate-400">
+                Сейчас: {{ rule.human_schedule }}
+            </span>
+        </div>
+    </form>
+    {% else %}
+    <div class="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center">
+        <p class="text-sm text-slate-500">
+            Правила напоминаний ещё не созданы.
+        </p>
+        <form method="post" action="/admin/reminders/defaults" class="mt-4">
+            <button type="submit"
+                    class="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
+                Создать стандартные правила
+            </button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+
+<section class="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Предпросмотр</h2>
+    <p class="mt-1 text-sm text-slate-500">
+        Так будет выглядеть утренняя сводка в Telegram.
+    </p>
+    <pre class="mt-3 overflow-x-auto rounded-xl bg-slate-900 px-4 py-3 text-xs leading-relaxed text-slate-100">{{ preview }}</pre>
+</section>
+{% endblock %}
