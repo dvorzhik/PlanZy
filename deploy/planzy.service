@@ -16,11 +16,12 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONIOENCODING=utf-8
 
 # Запуск через uvicorn: единый процесс (веб + бот + планировщик).
+# Логированием управляет само приложение (app.core.logging.setup_logging),
+# поэтому uvicorn запускается с --no-access-log и без --log-config.
 ExecStart=/opt/planzy/.venv/bin/uvicorn app.main:app \
     --host 127.0.0.1 \
     --port 8000 \
     --workers 1 \
-    --log-config /dev/null \
     --no-access-log
 
 # Graceful shutdown: даём время закрыть polling, планировщик и БД.

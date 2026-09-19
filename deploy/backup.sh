@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/opt/planzy"
+PROJECT_DIR="${PROJECT_DIR:-/opt/planzy/app}"
 DB_PATH="${PROJECT_DIR}/tutor.sqlite3"
 BACKUP_DIR="${PROJECT_DIR}/backups"
 KEEP_COPIES=14

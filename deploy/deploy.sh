@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/opt/planzy"
+PROJECT_DIR="${PROJECT_DIR:-/opt/planzy/app}"
 VENV="${PROJECT_DIR}/.venv"
 SERVICE="planzy"
 HEALTH_URL="http://127.0.0.1:8000/health"
