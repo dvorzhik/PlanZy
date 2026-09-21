@@ -205,3 +205,16 @@ class TestDeployDocs:
         """Описано решение проблемы с паролем sudo."""
         assert "sudoers-planzy-deploy" in readme
         assert "sudo -n" in readme
+
+    def test_documents_planzy_user_run(self, readme: str) -> None:
+        """Основная команда деплоя запускается от пользователя planzy."""
+        assert "sudo -u planzy" in readme
+        assert "/opt/planzy/app/deploy/deploy.sh" in readme
+
+    def test_warns_against_running_as_root(self, readme: str) -> None:
+        """Предупреждает, что запуск от root ломает git pull."""
+        assert "dubious ownership" in readme
+
+    def test_does_not_recommend_sudo_bash(self, readme: str) -> None:
+        """Нет совета запускать скрипт от root через sudo bash."""
+        assert "sudo bash /opt/planzy/app/deploy/deploy.sh`" not in readme

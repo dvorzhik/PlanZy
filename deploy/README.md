@@ -273,7 +273,7 @@ sudo journalctl -u planzy --since "24 hours ago" -p err --no-pager
 ## Обновление кода
 
 ```bash
-sudo bash /opt/planzy/app/deploy/deploy.sh
+sudo -u planzy -H bash -lc 'cd /opt/planzy/app && ./deploy/deploy.sh'
 ```
 
 Скрипт выполняет `git pull --ff-only`, обновляет зависимости, применяет
@@ -286,21 +286,10 @@ sudo bash /opt/planzy/app/deploy/deploy.sh
 
 ### Перезапуск сервиса без ввода пароля
 
-Шаг перезапуска использует `sudo -n systemctl restart planzy`. Если запускать
-деплой по SSH, TTY нет и `sudo` не может запросить пароль — без
-дополнительной настройки шаг упадёт. Есть два способа:
-
-**Способ 1 — запускать от root (проще всего):**
-
-```bash
-sudo bash /opt/planzy/app/deploy/deploy.sh
-```
-
-`deploy.sh` определяет, что работает от root, и вызывает `systemctl` напрямую.
-
-**Способ 2 — установить sudoers-правило для пользователя planzy.**
-Правило узкое: разрешает только `restart`/`status`/`is-active` **своего**
-сервиса, без произвольных команд.
+Шаг перезапуска использует `sudo -n systemctl restart planzy`. По SSH TTY
+нет, поэтому `sudo` не может запросить пароль — без дополнительной
+настройки шаг упадёт. Нужно установить sudoers-правило для пользователя
+`planzy` (разово, при настройке сервера):
 
 ```bash
 sudo install -m 0440 -o root -g root \
@@ -309,15 +298,22 @@ sudo install -m 0440 -o root -g root \
 sudo visudo -c          # проверка синтаксиса
 ```
 
-После этого деплой можно запускать от пользователя `planzy`:
+Правило узкое: разрешает только `restart`/`status`/`is-active` **своего**
+сервиса, плюс снимает требование TTY (`!requiretty`). Произвольные команды
+от `planzy` выполнять по-прежнему нельзя — убедиться можно так:
 
 ```bash
-sudo -u planzy -H bash /opt/planzy/app/deploy/deploy.sh
+sudo -u planzy sudo -n -l
 ```
 
 > ⚠️ Файлы в `/etc/sudoers.d/` должны быть доступны на запись только root
 > (режим `0440`), иначе `sudo` их молча проигнорирует. Всегда проверяйте
 > результат командой `sudo visudo -c`.
+
+> ⚠️ **Почему не `sudo bash deploy/deploy.sh`.** Запуск от root ломает
+> шаг 1: git отказывается работать в репозитории, принадлежащем `planzy`
+> («detected dubious ownership»). Поэтому деплой запускается от
+> пользователя `planzy`, а права на рестарт даёт sudoers-правило.
 
 > ℹ️ Скрипты `deploy.sh` и `backup.sh` хранятся в git с битом выполнения
 > (`100755`), поэтому после `git pull` они сразу исполняемы. Если права

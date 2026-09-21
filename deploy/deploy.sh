@@ -5,12 +5,16 @@
 # Выполняет: git pull -> установка зависимостей -> миграции ->
 # перезапуск сервиса -> проверка health-check.
 #
-# Использование (обычно от root — тогда шаг 4 не требует sudo):
-#   sudo bash /opt/planzy/app/deploy/deploy.sh
+# Использование (от пользователя planzy — владельца каталога):
+#   sudo -u planzy -H bash -lc 'cd /opt/planzy/app && ./deploy/deploy.sh'
 #
-# Если скрипт запускается от пользователя planzy по SSH (без TTY),
-# шаг перезапуска использует `sudo -n` и требует sudoers-правила
-# из deploy/sudoers-planzy-deploy (см. комментарий ниже у restart_service).
+# ВАЖНО: запускать от root не стоит. Тогда git pull на шаге 1 упадёт с
+# «detected dubious ownership» — репозиторий принадлежит planzy. Ветка
+# для root ниже оставлена на случай ручного прогона отдельных шагов.
+#
+# Если скрипт запускается по SSH (без TTY), шаг перезапуска использует
+# `sudo -n` и требует sudoers-правила из deploy/sudoers-planzy-deploy
+# (см. комментарий ниже у restart_service).
 
 set -euo pipefail
 
