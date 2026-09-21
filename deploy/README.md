@@ -227,12 +227,12 @@ sudo crontab -e
 Добавьте строку:
 
 ```cron
-0 3 * * * /opt/planzy/deploy/backup.sh >> /var/log/planzy-backup.log 2>&1
+0 3 * * * /opt/planzy/app/deploy/backup.sh >> /var/log/planzy-backup.log 2>&1
 ```
 
 Скрипт использует `sqlite3 .backup` (безопасен при WAL), проверяет
 целостность через `PRAGMA integrity_check`, сжимает gzip и хранит
-последние 14 копий в `/opt/planzy/backups/`.
+последние 14 копий в `/opt/planzy/app/backups/`.
 
 > **Совет:** дополнительно настройте выгрузку каталога `backups/`
 > на внешнее хранилище (S3, Яндекс.Диск) — локальные бэкапы не спасут
@@ -273,11 +273,72 @@ sudo journalctl -u planzy --since "24 hours ago" -p err --no-pager
 ## Обновление кода
 
 ```bash
-sudo -u planzy /opt/planzy/deploy/deploy.sh
+sudo bash /opt/planzy/app/deploy/deploy.sh
 ```
 
-Скрипт выполняет `git pull`, обновляет зависимости, применяет миграции,
-перезапускает сервис и проверяет health-check.
+Скрипт выполняет `git pull --ff-only`, обновляет зависимости, применяет
+миграции, перезапускает сервис и проверяет health-check.
+
+> **Путь к скрипту.** Проект развёрнут в `/opt/planzy/app`, поэтому
+> скрипт лежит в `/opt/planzy/app/deploy/deploy.sh`. Перед запуском
+> сверьте фактическое расположение: `sudo -u planzy git -C
+> /opt/planzy/app rev-parse --show-toplevel`.
+
+### Перезапуск сервиса без ввода пароля
+
+Шаг перезапуска использует `sudo -n systemctl restart planzy`. Если запускать
+деплой по SSH, TTY нет и `sudo` не может запросить пароль — без
+дополнительной настройки шаг упадёт. Есть два способа:
+
+**Способ 1 — запускать от root (проще всего):**
+
+```bash
+sudo bash /opt/planzy/app/deploy/deploy.sh
+```
+
+`deploy.sh` определяет, что работает от root, и вызывает `systemctl` напрямую.
+
+**Способ 2 — установить sudoers-правило для пользователя planzy.**
+Правило узкое: разрешает только `restart`/`status`/`is-active` **своего**
+сервиса, без произвольных команд.
+
+```bash
+sudo install -m 0440 -o root -g root \
+    /opt/planzy/app/deploy/sudoers-planzy-deploy \
+    /etc/sudoers.d/planzy-deploy
+sudo visudo -c          # проверка синтаксиса
+```
+
+После этого деплой можно запускать от пользователя `planzy`:
+
+```bash
+sudo -u planzy -H bash /opt/planzy/app/deploy/deploy.sh
+```
+
+> ⚠️ Файлы в `/etc/sudoers.d/` должны быть доступны на запись только root
+> (режим `0440`), иначе `sudo` их молча проигнорирует. Всегда проверяйте
+> результат командой `sudo visudo -c`.
+
+> ℹ️ Скрипты `deploy.sh` и `backup.sh` хранятся в git с битом выполнения
+> (`100755`), поэтому после `git pull` они сразу исполняемы. Если права
+> потерялись (например, из-за монтирования без `exec`), восстановите их:
+> `chmod +x /opt/planzy/app/deploy/*.sh`.
+
+### Откат
+
+Перед деплоем сделайте бэкап БД, чтобы можно было откатиться:
+
+```bash
+sudo -u planzy sqlite3 /opt/planzy/app/tutor.sqlite3 \
+    ".backup /opt/planzy/app/backups/predeploy-$(date +%Y%m%d-%H%M%S).sqlite3"
+```
+
+Откат кода — возврат на предыдущий коммит и перезапуск:
+
+```bash
+sudo -u planzy git -C /opt/planzy/app reset --hard <предыдущий_sha>
+sudo systemctl restart planzy
+```
 
 ---
 

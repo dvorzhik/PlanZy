@@ -1,0 +1,23 @@
+# PlanZy — sudoers-правило для деплоя.
+#
+# Установка:
+#   sudo install -m 0440 -o root -g root \
+#       /opt/planzy/app/deploy/sudoers-planzy-deploy \
+#       /etc/sudoers.d/planzy-deploy
+#   sudo visudo -c
+#
+# Зачем: deploy.sh запускается по SSH (без TTY), поэтому `sudo` не может
+# запросить пароль. Правило даёт пользователю planzy право перезапускать
+# и опрашивать ТОЛЬКО свой сервис — без права на произвольные команды.
+#
+# ВАЖНО: файлы в /etc/sudoers.d не должны быть доступны на запись никому,
+# кроме root, иначе sudo их проигнорирует. Поэтому режим 0440.
+
+Defaults:planzy !requiretty
+
+planzy ALL=(root) NOPASSWD: /usr/bin/systemctl restart planzy
+planzy ALL=(root) NOPASSWD: /usr/bin/systemctl status planzy, /usr/bin/systemctl status planzy --no-pager
+planzy ALL=(root) NOPASSWD: /usr/bin/systemctl is-active planzy
+planzy ALL=(root) NOPASSWD: /bin/systemctl restart planzy
+planzy ALL=(root) NOPASSWD: /bin/systemctl status planzy, /bin/systemctl status planzy --no-pager
+planzy ALL=(root) NOPASSWD: /bin/systemctl is-active planzy

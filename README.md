@@ -350,6 +350,7 @@ python -m scripts.make_favicons
 | [`deploy/nginx-planzy.conf`](deploy/nginx-planzy.conf) | reverse proxy + SSL + отдача статики |
 | [`deploy/backup.sh`](deploy/backup.sh) | ежедневный бэкап SQLite с проверкой целостности |
 | [`deploy/deploy.sh`](deploy/deploy.sh) | обновление кода на сервере одной командой |
+| [`deploy/sudoers-planzy-deploy`](deploy/sudoers-planzy-deploy) | NOPASSWD-правило для перезапуска сервиса при деплое |
 
 Кратко:
 
