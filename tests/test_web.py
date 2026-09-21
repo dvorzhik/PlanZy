@@ -353,6 +353,54 @@ class TestSharedLesson:
         assert "Решить 10 задач на мат в 2 хода" in response.text
         assert "Разобрать дебютные ловушки" in response.text
 
+    async def test_lesson_shows_note(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        tenant_id: int,
+        student,
+    ) -> None:
+        """Страница занятия показывает примечание из поля «Примечание»."""
+        entity, _ = student
+        lesson = await repo.lessons.get_last_lesson(tenant_id, entity.id)
+        assert lesson is not None
+        link = await repo.share_links.create(tenant_id=tenant_id, lesson_id=lesson.id)
+        await repo.session.flush()
+
+        response = await client.get(f"/lesson/{link.token}")
+
+        assert response.status_code == 200
+        assert "Примечание" in response.text
+        assert "present" in response.text
+
+    async def test_lesson_hides_empty_note(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Без заполненного примечания блок не рисуется."""
+        entity = await repo.entities.create(
+            tenant_id=tenant_id,
+            name="Без примечания",
+            entity_type="student",
+        )
+        lesson = await repo.lessons.create(
+            tenant_id=tenant_id,
+            entity_id=entity.id,
+            lesson_date=date(2026, 9, 18),
+            topic="Эндшпиль",
+        )
+        await repo.session.flush()
+        link = await repo.share_links.create(tenant_id=tenant_id, lesson_id=lesson.id)
+        await repo.session.flush()
+
+        response = await client.get(f"/lesson/{link.token}")
+
+        assert response.status_code == 200
+        assert "Эндшпиль" in response.text
+        assert "Примечание" not in response.text
+
     async def test_lesson_hides_internal_notes(
         self,
         client: AsyncClient,
