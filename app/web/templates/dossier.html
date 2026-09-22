@@ -49,7 +49,7 @@
     {% if dossier.last_next_step %}
     <section class="rounded-2xl bg-brand-50 p-5">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-brand-700">План на следующий урок</h2>
-        <p class="mt-2 whitespace-pre-line text-sm text-brand-700">{{ dossier.last_next_step }}</p>
+        <p class="mt-2 whitespace-pre-line text-sm text-brand-700">{{ dossier.last_next_step | linkify }}</p>
     </section>
     {% endif %}
 
@@ -104,12 +104,12 @@
                         </span>
                     </div>
                 </div>
-                <p class="mt-1 text-sm font-medium text-slate-800">{{ entry.topic }}</p>
+                <p class="mt-1 text-sm font-medium text-slate-800">{{ entry.topic | linkify }}</p>
                 {% if entry.homework %}
-                    <p class="mt-1 text-xs text-slate-500">ДЗ: {{ entry.homework }}</p>
+                    <p class="mt-1 text-xs text-slate-500">ДЗ: {{ entry.homework | linkify }}</p>
                 {% endif %}
                 {% if entry.next_step %}
-                    <p class="mt-1 text-xs text-brand-600">Далее: {{ entry.next_step }}</p>
+                    <p class="mt-1 text-xs text-brand-600">Далее: {{ entry.next_step | linkify }}</p>
                 {% endif %}
             </li>
             {% endfor %}

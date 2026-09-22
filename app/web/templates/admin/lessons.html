@@ -108,9 +108,9 @@
                             {% endif %}
                         </td>
                         <td class="px-4 py-3 text-slate-700 align-top">
-                            {{ row.lesson.topic or "—" }}
+                            {{ row.lesson.topic | linkify or "—" }}
                             {% if row.lesson.homework %}
-                                <p class="mt-0.5 text-xs text-slate-400">ДЗ: {{ row.lesson.homework }}</p>
+                                <p class="mt-0.5 text-xs text-slate-400">ДЗ: {{ row.lesson.homework | linkify }}</p>
                             {% endif %}
                         </td>
                         <td class="px-4 py-3 align-top">

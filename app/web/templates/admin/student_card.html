@@ -188,9 +188,9 @@
                         </span>
                         {% endif %}
                     </div>
-                    <p class="mt-1 text-sm text-slate-600">{{ lesson.topic }}</p>
+                    <p class="mt-1 text-sm text-slate-600">{{ lesson.topic | linkify }}</p>
                     {% if lesson.homework %}
-                    <p class="mt-1 text-xs text-slate-400">ДЗ: {{ lesson.homework }}</p>
+                    <p class="mt-1 text-xs text-slate-400">ДЗ: {{ lesson.homework | linkify }}</p>
                     {% endif %}
                 </li>
                 {% endfor %}

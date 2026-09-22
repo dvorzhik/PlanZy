@@ -20,7 +20,7 @@
     {# --- Тема и оценка --- #}
     <section class="rounded-2xl bg-white p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Тема занятия</h2>
-        <p class="mt-3 text-base font-medium text-slate-900">{{ lesson.topic }}</p>
+        <p class="mt-3 text-base font-medium text-slate-900">{{ lesson.topic | linkify }}</p>
 
         {% if lesson.rating %}
         {% set rating_value = lesson.rating | int %}
@@ -37,7 +37,7 @@
     {% if lesson.attendance %}
     <section class="rounded-2xl bg-white p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Примечание</h2>
-        <p class="mt-3 whitespace-pre-line text-sm text-slate-700">{{ lesson.attendance }}</p>
+        <p class="mt-3 whitespace-pre-line text-sm text-slate-700">{{ lesson.attendance | linkify }}</p>
     </section>
     {% endif %}
 
@@ -45,7 +45,7 @@
     {% if lesson.homework %}
     <section class="rounded-2xl bg-white p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-amber-700">Домашнее задание</h2>
-        <p class="mt-3 whitespace-pre-line text-sm text-slate-800">{{ lesson.homework }}</p>
+        <p class="mt-3 whitespace-pre-line text-sm text-slate-800">{{ lesson.homework | linkify }}</p>
     </section>
     {% endif %}
 
@@ -53,7 +53,7 @@
     {% if lesson.next_step %}
     <section class="rounded-2xl bg-white p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-brand-700">План на следующий урок</h2>
-        <p class="mt-3 whitespace-pre-line text-sm text-slate-800">{{ lesson.next_step }}</p>
+        <p class="mt-3 whitespace-pre-line text-sm text-slate-800">{{ lesson.next_step | linkify }}</p>
     </section>
     {% endif %}
 

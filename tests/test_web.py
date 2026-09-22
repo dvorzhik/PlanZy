@@ -155,6 +155,34 @@ class TestPublicCard:
         assert response.status_code == 404
         assert "не найдена" in response.text.lower()
 
+    async def test_card_renders_active_link_in_homework(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Ссылка в домашнем задании на карточке родителя кликабельна."""
+        entity = await repo.entities.create(
+            tenant_id=tenant_id,
+            name="Аня",
+            entity_type="student",
+            subject="Шахматы",
+        )
+        await repo.lessons.create(
+            tenant_id=tenant_id,
+            entity_id=entity.id,
+            lesson_date=date(2026, 9, 17),
+            topic="Ладья",
+            homework="Задачи: https://lichess.org/training/basic",
+            attendance="present",
+        )
+        await repo.session.flush()
+
+        response = await client.get(f"/l/{entity.public_token}")
+
+        assert response.status_code == 200
+        assert '<a href="https://lichess.org/training/basic"' in response.text
+
     async def test_card_shows_schedule_from_slots(
         self,
         client: AsyncClient,
@@ -330,6 +358,38 @@ class TestDossier:
 
 class TestSharedLesson:
     """Проверки публичной страницы одного занятия ``/lesson/{token}``."""
+
+    async def test_lesson_links_become_clickable(
+        self,
+        client: AsyncClient,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Ссылки в ДЗ, плане и примечании рисуются активными."""
+        entity = await repo.entities.create(
+            tenant_id=tenant_id,
+            name="Со ссылками",
+            entity_type="student",
+        )
+        lesson = await repo.lessons.create(
+            tenant_id=tenant_id,
+            entity_id=entity.id,
+            lesson_date=date(2026, 9, 19),
+            topic="Тактика",
+            homework="Решить задачи: https://lichess.org/training/abc",
+            next_step="Разбор на www.youtube.com/watch?v=xyz",
+            attendance="Был, ссылка на партию: chess.com/game/1",
+        )
+        await repo.session.flush()
+        link = await repo.share_links.create(tenant_id=tenant_id, lesson_id=lesson.id)
+        await repo.session.flush()
+
+        response = await client.get(f"/lesson/{link.token}")
+
+        assert response.status_code == 200
+        assert '<a href="https://lichess.org/training/abc"' in response.text
+        assert '<a href="https://www.youtube.com/watch?v=xyz"' in response.text
+        assert '<a href="https://chess.com/game/1"' in response.text
 
     async def test_lesson_shows_homework_and_plan(
         self,
