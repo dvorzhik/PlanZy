@@ -1529,6 +1529,34 @@ class TestDispatchLogRepository:
 
         assert await repo.dispatch_log.was_sent(other.id, "day_before", MONDAY) is False
 
+    async def test_last_sent_date_none_without_entries(
+        self, repo: Repository, tenant_id: int
+    ) -> None:
+        """Без отправок последней даты нет."""
+        assert await repo.dispatch_log.last_sent_date(tenant_id, "day_before") is None
+
+    async def test_last_sent_date_ignores_entity_filter(
+        self, repo: Repository, tenant_id: int
+    ) -> None:
+        """Дата находится, даже если запись привязана к ученику."""
+        entity_id = await _seed_entity(repo, tenant_id)
+        await repo.dispatch_log.create(tenant_id, "day_before", MONDAY, entity_id)
+
+        assert await repo.dispatch_log.last_sent_date(tenant_id, "day_before") == MONDAY
+
+    async def test_last_sent_date_returns_latest(self, repo: Repository, tenant_id: int) -> None:
+        """Из нескольких отправок возвращается самая поздняя."""
+        await repo.dispatch_log.create(tenant_id, "day_before", MONDAY)
+        await repo.dispatch_log.create(tenant_id, "day_before", TUESDAY)
+
+        assert await repo.dispatch_log.last_sent_date(tenant_id, "day_before") == TUESDAY
+
+    async def test_last_sent_date_separates_kinds(self, repo: Repository, tenant_id: int) -> None:
+        """У разных правил свои последние даты."""
+        await repo.dispatch_log.create(tenant_id, "day_before", MONDAY)
+
+        assert await repo.dispatch_log.last_sent_date(tenant_id, "morning_of") is None
+
     async def test_list_by_date(self, repo: Repository, tenant_id: int) -> None:
         """Выборка за дату возвращает только записи этой даты."""
         await repo.dispatch_log.create(tenant_id, "day_before", MONDAY)

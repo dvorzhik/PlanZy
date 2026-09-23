@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -17,6 +16,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import Tenant
 from app.db.repository import Repository
+from app.scheduler.scheduler import DISPATCH_TICK_MINUTES
 from app.services.audit_service import AuditService
 from app.services.reminder_service import REMINDER_KINDS, ReminderService
 from app.services.settings_service import TenantSettingsService
@@ -85,24 +85,6 @@ def _parse_float(raw: str | None) -> float | None:
         return None
     try:
         return float(cleaned)
-    except ValueError:
-        return None
-
-
-def _parse_int(raw: str | None) -> int | None:
-    """Разбирает целое число из формы.
-
-    Args:
-        raw: Сырое значение из формы.
-
-    Returns:
-        Число либо ``None``, если разобрать не удалось.
-    """
-    cleaned = _clean(raw)
-    if not cleaned:
-        return None
-    try:
-        return int(cleaned)
     except ValueError:
         return None
 
@@ -235,10 +217,8 @@ async def reminders_page(
                 "kind": rule.kind,
                 "enabled": rule.is_enabled,
                 "send_at": rule.time_of_day or "",
-                "offset_days": _offset_days(rule),
                 "channel": rule.channel,
                 "description": service.describe(rule),
-                "human_schedule": _human_schedule(rule),
                 "last_sent": None,
             }
         )
@@ -256,7 +236,7 @@ async def reminders_page(
             "rule_labels": REMINDER_LABELS,
             "channel_options": CHANNEL_OPTIONS,
             "preview": PREVIEW_TEMPLATE.format(count=3),
-            "schedule_hint": _schedule_hint(),
+            "schedule_hint": _schedule_hint(tenant, rules),
             "saved": request.query_params.get("saved") == "1",
             "error": request.query_params.get("error"),
         },
@@ -278,48 +258,36 @@ async def _attach_last_sent(
         tenant_id: Идентификатор тенанта.
         described: Список правил для шаблона (изменяется на месте).
     """
-    today = date.today()
     for item in described:
         try:
-            found = None
-            # Ищем ближайшую дату в пределах двух недель назад.
-            for offset in range(15):
-                probe = today - timedelta(days=offset)
-                if await repo.dispatch_log.was_sent(tenant_id, item["kind"], probe):
-                    found = probe
-                    break
-            item["last_sent"] = found
-        except Exception as exc:  # pragma: no cover - диагностический путь
-            logger.warning("Не удалось прочитать журнал отправок: %s", exc)
+            item["last_sent"] = await repo.dispatch_log.last_sent_date(tenant_id, item["kind"])
+        except Exception:  # pragma: no cover - диагностический путь
+            logger.exception("Не удалось прочитать журнал отправок")
 
 
-def _schedule_hint() -> dict[str, str]:
-    """Возвращает расписание задач планировщика для подсказки в UI.
+def _schedule_hint(tenant: Tenant, rules: list[Any]) -> dict[str, Any]:
+    """Возвращает расписание рассылки по правилам тренера для подсказки в UI.
 
-    Returns:
-        Словарь с временем утренней и вечерней рассылки и часовым поясом.
-    """
-    return {
-        "morning": settings.morning_dispatch_time,
-        "day_before": settings.day_before_dispatch_time,
-        "timezone": settings.timezone,
-    }
-
-
-def _offset_days(rule: Any) -> int:
-    """Переводит смещение правила из минут в дни для формы.
-
-    В модели ``ReminderRule`` смещение хранится в минутах
-    (``offset_minutes``), а тренеру в интерфейсе удобнее видеть дни.
+    Время берётся из правил (``reminder_rules``), а не из ``.env``: именно
+    правила определяют фактическое время отправки.
 
     Args:
-        rule: ORM-объект правила напоминания.
+        tenant: Тренер (источник часового пояса).
+        rules: Правила напоминаний тенанта.
 
     Returns:
-        Количество дней (0, если смещение не задано).
+        Словарь со временем утренней и вечерней рассылки, часовым поясом и
+        периодичностью проверки правил.
     """
-    minutes = getattr(rule, "offset_minutes", None) or 0
-    return minutes // (24 * 60)
+    by_kind = {rule.kind: rule for rule in rules}
+    morning = by_kind.get("morning_of")
+    day_before = by_kind.get("day_before")
+    return {
+        "morning": (morning.time_of_day if morning is not None else None) or "—",
+        "day_before": (day_before.time_of_day if day_before is not None else None) or "—",
+        "timezone": tenant.timezone or settings.timezone,
+        "tick_minutes": DISPATCH_TICK_MINUTES,
+    }
 
 
 def _human_schedule(rule: Any) -> str:
@@ -329,17 +297,14 @@ def _human_schedule(rule: Any) -> str:
         rule: ORM-объект правила напоминания.
 
     Returns:
-        Строка вида «в 20:00, за 1 день».
+        Строка вида «в 20:00 (накануне занятия)».
     """
-    parts = [f"в {rule.time_of_day or '—'}"]
-    offset = _offset_days(rule)
-    if offset == 1:
-        parts.append("за 1 день")
-    elif offset > 1:
-        parts.append(f"за {offset} дней")
+    kind = getattr(rule, "kind", "")
+    label = REMINDER_LABELS.get(kind, kind)
+    parts = [f"в {rule.time_of_day or '—'}", f"({label.lower()})"]
     if not rule.is_enabled:
         parts.append("выключено")
-    return ", ".join(parts)
+    return " ".join(parts)
 
 
 @router.post("/reminders/defaults", include_in_schema=False)
@@ -364,7 +329,6 @@ async def reminders_create_defaults(
 async def reminder_update(
     rule_id: int,
     send_at: str | None = Form(None),
-    offset_days: str | None = Form(None),
     channel: str | None = Form(None),
     enabled: str | None = Form(None),
     tenant: Tenant = Depends(require_tenant),  # noqa: B008
@@ -375,7 +339,6 @@ async def reminder_update(
     Args:
         rule_id: Идентификатор правила.
         send_at: Время отправки в формате ``ЧЧ:ММ``.
-        offset_days: Сдвиг в днях.
         channel: Канал отправки.
         enabled: Признак включённости.
         tenant: Тенант из cookie-сессии.
@@ -389,11 +352,6 @@ async def reminder_update(
     clean_time = _clean(send_at)
     if clean_time:
         fields["time_of_day"] = clean_time
-
-    offset = _parse_int(offset_days)
-    if offset is not None:
-        # В форме тренер задаёт сдвиг в днях, в модели он хранится в минутах.
-        fields["offset_minutes"] = offset * 24 * 60
 
     clean_channel = _clean(channel).lower()
     if clean_channel:

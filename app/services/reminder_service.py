@@ -1,10 +1,13 @@
 """Сервис правил напоминаний: CRUD и расчёт момента отправки.
 
-Правила хранятся в ``reminder_rules`` и описывают, *что* и *когда*
+Правила хранятся в ``reminder_rules`` и описывают, *во сколько* и *о чём*
 отправлять тренеру в Telegram:
 
 * ``day_before`` — вечером накануне занятия (``time_of_day``);
 * ``morning_of`` — утром в день занятия (``time_of_day``).
+
+Момент отправки вычисляет :meth:`ReminderService.resolve_send_at`, а
+планировщик лишь проверяет, наступил ли он.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ REMINDER_KINDS = ("day_before", "morning_of")
 
 # Человекочитаемые названия правил.
 KIND_LABELS = {
-    "day_before": "Вечером накануне занятия",
+    "day_before": "Накануне занятия вечером",
     "morning_of": "Утром в день занятия",
 }
 
@@ -32,8 +35,8 @@ REMINDER_CHANNELS = ("telegram", "whatsapp")
 
 # Значения по умолчанию для новых правил.
 DEFAULT_TIME_OF_DAY = {
-    "day_before": "19:00",
-    "morning_of": "08:00",
+    "day_before": "20:00",
+    "morning_of": "09:00",
 }
 
 # Границы смещения правила (в минутах).
@@ -295,6 +298,11 @@ class ReminderService:
     ) -> ReminderSchedule | None:
         """Вычисляет, когда нужно отправить напоминание по правилу.
 
+        Момент отправки = дата занятия + ``time_of_day`` правила:
+
+        * ``day_before`` — вечер указанного в правиле времени **накануне**;
+        * ``morning_of`` — указанное время **в день** занятия.
+
         Args:
             rule: Правило напоминания.
             lesson_date: Дата занятия.
@@ -302,14 +310,22 @@ class ReminderService:
             now: Текущий момент (для тестов).
 
         Returns:
-            Расчёт момента отправки или ``None``, если правило выключено
-            либо параметры некорректны.
+            Расчёт момента отправки либо ``None``, если правило выключено
+            либо время правила некорректно.
         """
         if not rule.is_enabled:
             return None
 
+        send_time = _parse_time(rule.time_of_day)
+        if send_time is None:
+            logger.warning(
+                "Правило %s: некорректное время %r — напоминание не будет отправлено",
+                rule.kind,
+                rule.time_of_day,
+            )
+            return None
+
         if rule.kind == "day_before":
-            send_time = _parse_time(rule.time_of_day) or time(19, 0)
             send_at = datetime.combine(lesson_date - timedelta(days=1), send_time)
             return ReminderSchedule(
                 rule_kind=rule.kind,
@@ -319,7 +335,6 @@ class ReminderService:
             )
 
         if rule.kind == "morning_of":
-            send_time = _parse_time(rule.time_of_day) or time(8, 0)
             send_at = datetime.combine(lesson_date, send_time)
             return ReminderSchedule(
                 rule_kind=rule.kind,
@@ -338,10 +353,11 @@ class ReminderService:
             rule: Правило напоминания.
 
         Returns:
-            Описание для интерфейса кабинета.
+            Описание для интерфейса кабинета, например
+            «Накануне занятия вечером, в 20:00».
         """
         label = KIND_LABELS.get(rule.kind, rule.kind)
-        return f"{label}: в {rule.time_of_day or '—'}"
+        return f"{label}, в {rule.time_of_day or '—'}"
 
     @staticmethod
     def _validate(

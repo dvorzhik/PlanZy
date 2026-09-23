@@ -23,7 +23,12 @@
 
 <div class="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
     <p>
-        Рассылка идёт автоматически:
+        Рассылка уходит по вашим правилам ниже. Проверка выполняется каждые
+        {{ schedule_hint.tick_minutes }} мин, поэтому напоминание приходит
+        в указанное вами время.
+    </p>
+    <p class="mt-1">
+        Сейчас:
         <span class="font-medium text-slate-700">утром в {{ schedule_hint.morning }}</span>
         (о занятиях на сегодня) и
         <span class="font-medium text-slate-700">вечером в {{ schedule_hint.day_before }}</span>
@@ -55,21 +60,11 @@
             </label>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label class="block">
                 <span class="text-sm font-medium text-slate-700">Время отправки</span>
                 <input type="time" name="send_at" value="{{ rule.send_at }}"
                        class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
-            </label>
-
-            <label class="block">
-                <span class="text-sm font-medium text-slate-700">Сдвиг, дней</span>
-                <input type="number" name="offset_days" step="1" min="0" max="30"
-                       value="{{ rule.offset_days }}"
-                       class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
-                <span class="mt-1 block text-xs text-slate-400">
-                    Для «за день» — 1, для «утром в день занятия» — 0.
-                </span>
             </label>
 
             <label class="block">
@@ -91,7 +86,7 @@
                 Сохранить
             </button>
             <span class="text-xs text-slate-400">
-                Сейчас: {{ rule.human_schedule }}
+                Сейчас: {{ rule.description }}
             </span>
             <span class="text-xs {% if rule.last_sent %}text-emerald-600{% else %}text-slate-400{% endif %}">
                 {% if rule.last_sent %}

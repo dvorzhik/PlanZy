@@ -123,7 +123,7 @@ def patched_lifespan(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(
         main_module,
         "register_jobs",
-        lambda sched, b: sched.add_job(None, id="morning_dispatch"),
+        lambda sched, b: sched.add_job(None, id="reminder_tick"),
     )
     monkeypatch.setattr(main_module, "start_scheduler", lambda sched: sched.start())
     monkeypatch.setattr(
@@ -167,7 +167,7 @@ class TestLifespan:
             assert patched_lifespan["bot"].webhook_deleted is True
             assert patched_lifespan["dispatcher"].polling_started is True
             assert patched_lifespan["scheduler"].running is True
-            assert patched_lifespan["scheduler"].jobs == ["morning_dispatch"]
+            assert patched_lifespan["scheduler"].jobs == ["reminder_tick"]
             assert app.state.bot is patched_lifespan["bot"]
             assert app.state.scheduler is patched_lifespan["scheduler"]
 

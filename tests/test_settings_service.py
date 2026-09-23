@@ -483,6 +483,15 @@ class TestReminderResolveSendAt:
 
         assert "19:00" in ReminderService.describe(rule)
 
+    async def test_bad_time_returns_none(
+        self, reminder_service: ReminderService, tenant_id: int
+    ) -> None:
+        """Некорректное время правила не даёт момента отправки."""
+        rule = await reminder_service.upsert_rule(tenant_id, "day_before", time_of_day="19:00")
+        rule.time_of_day = "не время"
+
+        assert ReminderService.resolve_send_at(rule, MONDAY, "17:30") is None
+
 
 class TestAuditService:
     """Проверки журнала действий тренера."""

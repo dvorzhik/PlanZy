@@ -8,8 +8,8 @@
 * ``POST /admin/reminders/defaults`` — создание стандартного набора правил;
 * ``POST /admin/reminders/{id}`` — обновление правила;
 * ``POST /admin/reminders/{id}/delete`` — удаление правила;
-* вспомогательные функции раздела (``_parse_float``, ``_parse_int``,
-  ``_checkbox``, ``_human_schedule``).
+* вспомогательные функции раздела (``_parse_float``, ``_checkbox``,
+  ``_human_schedule``, ``_schedule_hint``).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from app.web.admin_settings_routes import (
     _checkbox,
     _human_schedule,
     _parse_float,
-    _parse_int,
+    _schedule_hint,
 )
 from app.web.app import create_app
 from app.web.dependencies import get_db_session
@@ -459,14 +459,13 @@ class TestReminderUpdate:
     async def test_update_changes_fields(
         self, client: AsyncClient, repo: Repository, tenant_id: int
     ) -> None:
-        """Время, сдвиг и канал сохраняются."""
+        """Время и канал сохраняются."""
         rule = await ReminderService(repo).upsert_rule(tenant_id, "day_before", time_of_day="19:00")
 
         response = await client.post(
             f"/admin/reminders/{rule.id}",
             data={
                 "send_at": "20:30",
-                "offset_days": "1",
                 "channel": "whatsapp",
                 "enabled": "1",
             },
@@ -479,7 +478,6 @@ class TestReminderUpdate:
         updated = await repo.reminders.get_by_id(tenant_id, rule.id)
         assert updated is not None
         assert updated.time_of_day == "20:30"
-        assert updated.offset_minutes == 24 * 60
         assert updated.channel == "whatsapp"
         assert updated.is_enabled is True
 
@@ -664,19 +662,6 @@ class TestSettingsHelpers:
         """Некорректные значения дают ``None``."""
         assert _parse_float(raw) is None
 
-    @pytest.mark.parametrize(
-        ("raw", "expected"),
-        [("3", 3), ("  7  ", 7), ("-2", -2), ("0", 0)],
-    )
-    def test_parse_int_valid(self, raw: str, expected: int) -> None:
-        """Целые числа разбираются."""
-        assert _parse_int(raw) == expected
-
-    @pytest.mark.parametrize("raw", [None, "", "   ", "три", "1.5"])
-    def test_parse_int_invalid(self, raw: str | None) -> None:
-        """Некорректные значения дают ``None``."""
-        assert _parse_int(raw) is None
-
     @pytest.mark.parametrize("raw", ["1", "on", "true", "yes", "ON", " True "])
     def test_checkbox_truthy(self, raw: str) -> None:
         """Разные варианты «включено» дают ``True``."""
@@ -692,41 +677,70 @@ class TestHumanSchedule:
     """Проверки человекочитаемого описания правила."""
 
     def test_human_schedule_without_offset(self) -> None:
-        """Правило без сдвига описывается только временем."""
+        """Правило описывается временем и видом."""
 
         class _Rule:
+            kind = "morning_of"
             time_of_day = "08:00"
-            offset_minutes = 0
             is_enabled = True
 
-        assert _human_schedule(_Rule()) == "в 08:00"
+        assert _human_schedule(_Rule()) == "в 08:00 (утром в день занятия)"
 
-    def test_human_schedule_with_single_day_offset(self) -> None:
-        """Сдвиг в один день описывается как «за 1 день»."""
+    def test_human_schedule_day_before(self) -> None:
+        """Правило day_before описывается своим видом."""
 
         class _Rule:
-            time_of_day = "19:00"
-            offset_minutes = 24 * 60
+            kind = "day_before"
+            time_of_day = "20:00"
             is_enabled = True
 
-        assert _human_schedule(_Rule()) == "в 19:00, за 1 день"
-
-    def test_human_schedule_with_multi_day_offset(self) -> None:
-        """Сдвиг больше дня описывается числом дней."""
-
-        class _Rule:
-            time_of_day = "19:00"
-            offset_minutes = 3 * 24 * 60
-            is_enabled = True
-
-        assert _human_schedule(_Rule()) == "в 19:00, за 3 дней"
+        assert _human_schedule(_Rule()) == "в 20:00 (накануне занятия)"
 
     def test_human_schedule_marks_disabled(self) -> None:
         """Выключенное правило помечается."""
 
         class _Rule:
-            time_of_day = "19:00"
-            offset_minutes = 24 * 60
+            kind = "day_before"
+            time_of_day = "20:00"
             is_enabled = False
 
-        assert _human_schedule(_Rule()) == "в 19:00, за 1 день, выключено"
+        assert _human_schedule(_Rule()) == "в 20:00 (накануне занятия) выключено"
+
+
+class TestScheduleHint:
+    """Проверки подсказки о расписании рассылки."""
+
+    def test_hint_uses_rule_times_not_env(self) -> None:
+        """Время в подсказке берётся из правил, а часовой пояс — у тенанта."""
+
+        class _Rule:
+            def __init__(self, kind: str, time_of_day: str) -> None:
+                self.kind = kind
+                self.time_of_day = time_of_day
+
+        class _Tenant:
+            timezone = "Europe/Moscow"
+
+        hint = _schedule_hint(
+            _Tenant(),  # type: ignore[arg-type]
+            [
+                _Rule("morning_of", "09:00"),
+                _Rule("day_before", "20:00"),
+            ],
+        )
+
+        assert hint["morning"] == "09:00"
+        assert hint["day_before"] == "20:00"
+        assert hint["timezone"] == "Europe/Moscow"
+        assert hint["tick_minutes"] > 0
+
+    def test_hint_without_rules_shows_dash(self) -> None:
+        """Если правил нет, время показывается прочерком."""
+
+        class _Tenant:
+            timezone = "Asia/Jerusalem"
+
+        hint = _schedule_hint(_Tenant(), [])  # type: ignore[arg-type]
+
+        assert hint["morning"] == "—"
+        assert hint["day_before"] == "—"

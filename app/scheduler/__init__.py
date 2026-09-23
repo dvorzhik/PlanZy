@@ -1,12 +1,13 @@
 """Планировщик задач PlanZy (APScheduler).
 
-Содержит утренний диспетчер напоминаний и фабрику ``AsyncIOScheduler``,
-работающую в общем event loop с FastAPI и aiogram.
+Содержит сервис рассылки напоминаний по правилам из БД и фабрику
+``AsyncIOScheduler``, работающую в общем event loop с FastAPI и aiogram.
 """
 
 from app.scheduler.dispatch_service import DispatchResult, MorningDispatchService
 from app.scheduler.scheduler import (
-    MORNING_DISPATCH_JOB_ID,
+    DISPATCH_TICK_JOB_ID,
+    DISPATCH_TICK_MINUTES,
     create_scheduler,
     register_jobs,
     shutdown_scheduler,
@@ -14,7 +15,8 @@ from app.scheduler.scheduler import (
 )
 
 __all__ = [
-    "MORNING_DISPATCH_JOB_ID",
+    "DISPATCH_TICK_JOB_ID",
+    "DISPATCH_TICK_MINUTES",
     "DispatchResult",
     "MorningDispatchService",
     "create_scheduler",

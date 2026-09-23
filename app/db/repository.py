@@ -1199,6 +1199,26 @@ class DispatchLogRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def last_sent_date(self, tenant_id: int, rule_kind: str) -> date | None:
+        """Возвращает дату последней успешной отправки правила.
+
+        В отличие от :meth:`was_sent`, учитывает записи по всем ученикам:
+        тренеру нужно видеть, что рассылка по правилу вообще работала.
+
+        Args:
+            tenant_id: Идентификатор тенанта.
+            rule_kind: Вид правила (``day_before`` / ``morning_of``).
+
+        Returns:
+            Дата последней отправки или ``None``, если отправок не было.
+        """
+        stmt = select(func.max(DispatchLog.dispatch_date)).where(
+            DispatchLog.tenant_id == tenant_id,
+            DispatchLog.rule_kind == rule_kind,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def delete_by_date(self, tenant_id: int, dispatch_date: date) -> int:
         """Сбрасывает журнал за дату (для повторной отправки вручную)."""
         stmt = delete(DispatchLog).where(

@@ -60,16 +60,13 @@ async def main() -> None:
                         f"phone={phone!r} kind={lesson.kind}"
                     )
 
-        for label, runner in (
-            ("УТРЕННЯЯ (morning_of)", service.run),
-            ("ВЕЧЕРНЯЯ (day_before)", service.run_day_before),
-        ):
+        for label, runner in (("ПРОВЕРКА ПРАВИЛ (run_due)", service.run_due),):
             result = await runner()
             print(
                 f"\n{label}: дата={result.dispatch_date} тенантов={result.tenants_processed} "
                 f"занятий={result.entities_total} отправлено={result.messages_sent} "
                 f"без_телефона={result.skipped_no_phone} дублей={result.skipped_duplicate} "
-                f"ошибок={len(result.errors)}"
+                f"не_наступило={result.skipped_not_due} ошибок={len(result.errors)}"
             )
             for error in result.errors:
                 print(f"  ошибка: {error}")

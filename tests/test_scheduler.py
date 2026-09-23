@@ -3,16 +3,18 @@
 Проверяем:
     * сборку занятий на день из ``ScheduleSlot`` с учётом ``ScheduleException``;
     * отправку по правилам ``ReminderRule`` (``morning_of``, ``day_before``);
+    * отправку строго в указанное в правиле время (окно ``SEND_WINDOW``);
+    * часовой пояс тенанта;
     * пропуск учеников без телефона родителя;
     * обработку ошибок Telegram API;
     * защиту от дублирования через журнал ``DispatchLog``;
-    * регистрацию задач в планировщике.
+    * регистрацию задачи-тика в планировщике.
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import pytest
@@ -22,17 +24,14 @@ from app.db.repository import Repository
 from app.scheduler.dispatch_service import (
     DAY_BEFORE_KINDS,
     MORNING_KINDS,
+    SEND_WINDOW,
     WEEKDAY_CODES,
     DispatchResult,
     MorningDispatchService,
 )
 from app.scheduler.scheduler import (
-    DAY_BEFORE_DISPATCH_JOB_ID,
-    MORNING_DISPATCH_JOB_ID,
-    _reset_dispatch_guard,
+    DISPATCH_TICK_JOB_ID,
     create_scheduler,
-    get_last_day_before_date,
-    get_last_dispatch_date,
     register_jobs,
     shutdown_scheduler,
     start_scheduler,
@@ -40,6 +39,10 @@ from app.scheduler.scheduler import (
 
 # Понедельник — удобная фиксированная дата для тестов.
 MONDAY = date(2026, 9, 14)
+TUESDAY = date(2026, 9, 15)
+
+# Момент, когда правило morning_of в 09:00 уже наступило.
+MONDAY_0900 = datetime(2026, 9, 14, 9, 0)
 
 
 class StubBot:
@@ -116,6 +119,7 @@ async def _enable_rules(
     repo: Repository,
     tenant_id: int,
     *kinds: str,
+    time_of_day: str = "09:00",
 ) -> None:
     """Создаёт включённые правила напоминаний.
 
@@ -123,9 +127,15 @@ async def _enable_rules(
         repo: Фасад репозиториев.
         tenant_id: Идентификатор тенанта.
         *kinds: Виды правил (``morning_of``, ``day_before``).
+        time_of_day: Время отправки правила.
     """
     for kind in kinds:
-        await repo.reminders.create(tenant_id=tenant_id, kind=kind, is_enabled=True)
+        await repo.reminders.create(
+            tenant_id=tenant_id,
+            kind=kind,
+            time_of_day=time_of_day,
+            is_enabled=True,
+        )
 
 
 class TestDispatchResult:
@@ -159,7 +169,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.tenants_processed == 1
         assert result.entities_total == 2
@@ -182,7 +192,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.entities_total == 0
         assert result.messages_sent == 0
@@ -200,7 +210,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.entities_total == 2
         assert result.messages_sent == 1
@@ -217,7 +227,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.entities_total == 0
         assert result.messages_sent == 0
@@ -233,7 +243,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.tenants_processed == 1
         assert result.entities_total == 0
@@ -250,7 +260,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        await service.run(dispatch_date=MONDAY)
+        await service.run_due(now=MONDAY_0900)
 
         reminder = bot.sent[1]
         markup = reminder.get("reply_markup")
@@ -270,7 +280,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        await service.run(dispatch_date=MONDAY)
+        await service.run_due(now=MONDAY_0900)
 
         assert "Баланс" not in bot.sent[1]["text"]
         assert "не пополнен" not in bot.sent[1]["text"]
@@ -286,7 +296,7 @@ class TestMorningDispatchService:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        await service.run(dispatch_date=MONDAY)
+        await service.run_due(now=MONDAY_0900)
 
         assert "18:30" in bot.sent[1]["text"]
 
@@ -302,7 +312,7 @@ class TestMorningDispatchService:
         bot = StubBot(fail_on="Миша")
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.has_errors is True
         assert result.messages_sent == 1
@@ -319,7 +329,7 @@ class TestMorningDispatchService:
         bot = StubBot(fail_on="Доброе утро")
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.has_errors is True
         assert result.messages_sent == 0
@@ -356,7 +366,7 @@ class TestScheduleExceptions:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.entities_total == 0
         assert bot.sent == []
@@ -379,7 +389,7 @@ class TestScheduleExceptions:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        await service.run(dispatch_date=MONDAY)
+        await service.run_due(now=MONDAY_0900)
 
         assert "20:00" in bot.sent[1]["text"]
         assert "перенесено" in bot.sent[1]["text"]
@@ -402,7 +412,7 @@ class TestScheduleExceptions:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.entities_total == 1
         assert "12:00" in bot.sent[1]["text"]
@@ -427,7 +437,7 @@ class TestReminderRules:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         assert result.entities_total == 0
         assert bot.sent == []
@@ -437,16 +447,16 @@ class TestReminderRules:
         repo: Repository,
         tenant_id: int,
     ) -> None:
-        """Вечерняя рассылка берёт занятия на следующий день."""
+        """Правило day_before берёт занятия на следующий день."""
         # Вторник — следующий день после понедельника.
         await _seed_student(repo, tenant_id, name="Вторник", weekday="tue")
-        await _enable_rules(repo, tenant_id, "day_before")
+        await _enable_rules(repo, tenant_id, "day_before", time_of_day="20:00")
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run_day_before(dispatch_date=MONDAY)
+        result = await service.run_due(now=datetime(2026, 9, 14, 20, 0))
 
-        assert result.dispatch_date == date(2026, 9, 15)
+        assert result.dispatch_date == MONDAY
         assert result.entities_total == 1
         assert result.messages_sent == 1
 
@@ -455,16 +465,108 @@ class TestReminderRules:
         repo: Repository,
         tenant_id: int,
     ) -> None:
-        """Вечерняя рассылка не обрабатывает правило morning_of."""
+        """Правило day_before не обрабатывает занятия morning_of."""
         await _seed_student(repo, tenant_id, name="Вторник", weekday="tue")
-        await _enable_rules(repo, tenant_id, "morning_of")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="20:00")
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run_day_before(dispatch_date=MONDAY)
+        # Правило morning_of ждёт занятия на понедельник — их нет.
+        result = await service.run_due(now=datetime(2026, 9, 14, 20, 0))
 
         assert result.entities_total == 0
         assert bot.sent == []
+
+    async def test_rule_not_sent_before_its_time(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """До времени правила напоминание не отправляется."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        result = await service.run_due(now=datetime(2026, 9, 14, 8, 0))
+
+        assert result.messages_sent == 0
+        assert result.skipped_not_due == 1
+        assert bot.sent == []
+
+    async def test_rule_sent_at_its_time(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """В указанное в правиле время напоминание уходит."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        result = await service.run_due(now=datetime(2026, 9, 14, 9, 0))
+
+        assert result.messages_sent == 1
+
+    async def test_rule_skipped_after_send_window(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Просроченное напоминание (вне окна) не отправляется."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        late = MONDAY_0900 + SEND_WINDOW
+        result = await service.run_due(now=late)
+
+        assert result.messages_sent == 0
+        assert result.skipped_not_due == 1
+        assert bot.sent == []
+
+    async def test_time_comes_from_rule_not_env(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Отправка управляется временем правила, а не настройками из .env."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="17:45")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        assert (await service.run_due(now=datetime(2026, 9, 14, 8, 30))).messages_sent == 0
+        assert (await service.run_due(now=datetime(2026, 9, 14, 17, 45))).messages_sent == 1
+
+    async def test_tenant_timezone_is_respected(
+        self,
+        repo: Repository,
+        tenant_id: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Момент отправки считается в часовом поясе тенанта."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+
+        tenant = await repo.tenants.get_by_id(tenant_id)
+        assert tenant is not None
+        tenant.timezone = "Europe/Moscow"
+        await repo.session.flush()
+
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        # 08:00 по Москве — правило на 09:00 ещё не наступило.
+        before = await service.run_due(now=datetime(2026, 9, 14, 8, 0))
+        assert before.messages_sent == 0
+        assert before.skipped_not_due == 1
+
+        # 09:00 по Москве — наступило.
+        after = await service.run_due(now=datetime(2026, 9, 14, 9, 0))
+        assert after.messages_sent == 1
 
 
 class TestDispatchDeduplication:
@@ -481,8 +583,8 @@ class TestDispatchDeduplication:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        first = await service.run(dispatch_date=MONDAY)
-        second = await service.run(dispatch_date=MONDAY)
+        first = await service.run_due(now=MONDAY_0900)
+        second = await service.run_due(now=MONDAY_0900)
 
         assert first.messages_sent == 1
         assert second.messages_sent == 0
@@ -499,7 +601,7 @@ class TestDispatchDeduplication:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        await service.run(dispatch_date=MONDAY)
+        await service.run_due(now=MONDAY_0900)
 
         assert await repo.dispatch_log.was_sent(tenant_id, "morning_of", MONDAY, entity_id)
 
@@ -514,7 +616,7 @@ class TestDispatchDeduplication:
         bot = StubBot()
         service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
 
-        result = await service.run(dispatch_date=MONDAY)
+        result = await service.run_due(now=MONDAY_0900)
 
         # Утренняя рассылка обрабатывает только morning_of.
         assert result.messages_sent == 1
@@ -533,26 +635,15 @@ class TestSchedulerSetup:
             if scheduler.running:
                 scheduler.shutdown(wait=False)
 
-    def test_register_jobs_adds_morning_dispatch(self) -> None:
-        """Задача morning_dispatch регистрируется с корректным id."""
+    def test_register_jobs_adds_dispatch_tick(self) -> None:
+        """Задача-тик регистрируется с корректным id и расписанием."""
         scheduler = create_scheduler()
         try:
             register_jobs(scheduler, StubBot())  # type: ignore[arg-type]
-            job = scheduler.get_job(MORNING_DISPATCH_JOB_ID)
+            job = scheduler.get_job(DISPATCH_TICK_JOB_ID)
             assert job is not None
-            assert job.id == MORNING_DISPATCH_JOB_ID
-        finally:
-            if scheduler.running:
-                scheduler.shutdown(wait=False)
-
-    def test_register_jobs_adds_day_before_dispatch(self) -> None:
-        """Задача day_before_dispatch регистрируется с корректным id."""
-        scheduler = create_scheduler()
-        try:
-            register_jobs(scheduler, StubBot())  # type: ignore[arg-type]
-            job = scheduler.get_job(DAY_BEFORE_DISPATCH_JOB_ID)
-            assert job is not None
-            assert job.id == DAY_BEFORE_DISPATCH_JOB_ID
+            assert job.id == DISPATCH_TICK_JOB_ID
+            assert "minute" in str(job.trigger)
         finally:
             if scheduler.running:
                 scheduler.shutdown(wait=False)
@@ -575,49 +666,16 @@ class TestSchedulerSetup:
         assert scheduler.running is False
 
 
-class TestDispatchGuard:
-    """Проверки защиты от дублирования рассылки в процессе."""
+class TestDispatchTick:
+    """Проверки обёртки периодической задачи планировщика."""
 
-    def setup_method(self) -> None:
-        """Сбрасывает защиту перед каждым тестом."""
-        _reset_dispatch_guard()
-
-    def test_guard_starts_empty(self) -> None:
-        """Изначально даты последних рассылок не заданы."""
-        assert get_last_dispatch_date() is None
-        assert get_last_day_before_date() is None
-
-    async def test_run_morning_dispatch_sets_guard(
+    async def test_tick_runs_dispatch_and_returns_result(
         self,
         repo: Repository,
         tenant_id: int,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """После успешной рассылки дата фиксируется в защите."""
-        from contextlib import asynccontextmanager
-
-        from app.scheduler import scheduler as scheduler_module
-
-        @asynccontextmanager
-        async def _fake_session():
-            yield repo.session
-
-        monkeypatch.setattr(scheduler_module, "_last_dispatch_date", None)
-        monkeypatch.setattr("app.db.base.get_session", _fake_session)
-
-        bot = StubBot()
-        result = await scheduler_module._run_morning_dispatch(bot)  # type: ignore[arg-type]
-
-        assert result is not None
-        assert scheduler_module.get_last_dispatch_date() == result.dispatch_date
-
-    async def test_run_morning_dispatch_skips_second_call(
-        self,
-        repo: Repository,
-        tenant_id: int,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Повторный запуск в тот же день не выполняет рассылку."""
+        """Тик выполняет рассылку и возвращает итог."""
         from contextlib import asynccontextmanager
 
         from app.scheduler import scheduler as scheduler_module
@@ -627,60 +685,42 @@ class TestDispatchGuard:
             yield repo.session
 
         monkeypatch.setattr("app.db.base.get_session", _fake_session)
-        bot = StubBot()
 
-        first = await scheduler_module._run_morning_dispatch(bot)  # type: ignore[arg-type]
-        second = await scheduler_module._run_morning_dispatch(bot)  # type: ignore[arg-type]
+        bot = StubBot()
+        first = await scheduler_module._run_dispatch_tick(bot)  # type: ignore[arg-type]
 
         assert first is not None
-        assert second is None
+        assert isinstance(first, DispatchResult)
 
-    async def test_run_day_before_dispatch_sets_guard(
+    async def test_tick_is_idempotent(
         self,
         repo: Repository,
         tenant_id: int,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """После вечерней рассылки дата фиксируется в защите."""
+        """Повторный тик не отправляет то же напоминание снова."""
         from contextlib import asynccontextmanager
 
         from app.scheduler import scheduler as scheduler_module
 
-        @asynccontextmanager
-        async def _fake_session():
-            yield repo.session
-
-        monkeypatch.setattr(scheduler_module, "_last_day_before_date", None)
-        monkeypatch.setattr("app.db.base.get_session", _fake_session)
-
-        bot = StubBot()
-        result = await scheduler_module._run_day_before_dispatch(bot)  # type: ignore[arg-type]
-
-        assert result is not None
-        # Защита фиксирует день отправки, а не дату занятия (завтра).
-        assert scheduler_module.get_last_day_before_date() is not None
-        assert scheduler_module.get_last_day_before_date() != result.dispatch_date
-
-    async def test_run_day_before_dispatch_skips_second_call(
-        self,
-        repo: Repository,
-        tenant_id: int,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Повторный запуск вечерней рассылки в тот же день пропускается."""
-        from contextlib import asynccontextmanager
-
-        from app.scheduler import scheduler as scheduler_module
+        await _seed_student(repo, tenant_id, name="Миша", weekday=MONDAY.strftime("%a").lower())
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
 
         @asynccontextmanager
         async def _fake_session():
             yield repo.session
 
         monkeypatch.setattr("app.db.base.get_session", _fake_session)
+
+        # Защита от дублей — журнал DispatchLog, а не память процесса.
         bot = StubBot()
-
-        first = await scheduler_module._run_day_before_dispatch(bot)  # type: ignore[arg-type]
-        second = await scheduler_module._run_day_before_dispatch(bot)  # type: ignore[arg-type]
-
+        first = await scheduler_module._run_dispatch_tick(bot)  # type: ignore[arg-type]
         assert first is not None
-        assert second is None
+
+        # Компенсируем «сегодня» фиксированной датой, иначе тик смотрит
+        # на реальный день и занятий не найдёт.
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+        assert (await service.run_due(now=MONDAY_0900)).messages_sent == 1
+        second = await service.run_due(now=MONDAY_0900)
+        assert second.messages_sent == 0
+        assert second.skipped_duplicate == 1

@@ -1,19 +1,25 @@
 """Настройка APScheduler для PlanZy.
 
 Создаёт ``AsyncIOScheduler``, работающий в том же event loop, что FastAPI
-и aiogram. Регистрирует единственную задачу — утреннюю рассылку напоминаний.
+и aiogram. Регистрирует единственную задачу — периодическую проверку
+правил напоминаний.
+
+Время отправки берётся не из расписания cron, а из правил тренера
+(``reminder_rules.time_of_day``): задача-тик просыпается каждые
+``DISPATCH_TICK_MINUTES`` минут и отдаёт работу
+:class:`~app.scheduler.dispatch_service.MorningDispatchService`.
 
 Защита от дублирования реализована на двух уровнях:
     1. ``max_instances=1`` и ``coalesce=True`` — APScheduler не запустит
        задачу повторно, пока предыдущая не завершилась;
-    2. ``_last_dispatch_date`` — сервис не отправит рассылку дважды за день,
-       даже если job был вызван вручную или после перезапуска процесса.
+    2. журнал ``DispatchLog`` в БД — сервис не отправит одно и то же
+       напоминание дважды, даже если задача была вызвана вручную или
+       процесс перезапустился.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -29,42 +35,11 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Идентификатор задачи утренней рассылки.
-MORNING_DISPATCH_JOB_ID = "morning_dispatch"
+# Идентификатор задачи периодической проверки правил напоминаний.
+DISPATCH_TICK_JOB_ID = "reminder_tick"
 
-# Идентификатор задачи вечерней рассылки накануне занятий.
-DAY_BEFORE_DISPATCH_JOB_ID = "day_before_dispatch"
-
-# Дата последней успешной утренней рассылки — защита от дублирования в процессе.
-_last_dispatch_date: date | None = None
-
-# Дата последней успешной вечерней рассылки — защита от дублирования в процессе.
-_last_day_before_date: date | None = None
-
-
-def _reset_dispatch_guard() -> None:
-    """Сбрасывает защиту от дублирования (используется в тестах)."""
-    global _last_dispatch_date, _last_day_before_date  # noqa: PLW0603
-    _last_dispatch_date = None
-    _last_day_before_date = None
-
-
-def get_last_dispatch_date() -> date | None:
-    """Возвращает дату последней утренней рассылки.
-
-    Returns:
-        Дата последней рассылки или None.
-    """
-    return _last_dispatch_date
-
-
-def get_last_day_before_date() -> date | None:
-    """Возвращает дату последней вечерней рассылки.
-
-    Returns:
-        Дата последней рассылки или None.
-    """
-    return _last_day_before_date
+# Периодичность проверки правил, в минутах.
+DISPATCH_TICK_MINUTES = 5
 
 
 def create_scheduler() -> AsyncIOScheduler:
@@ -78,7 +53,7 @@ def create_scheduler() -> AsyncIOScheduler:
         job_defaults={
             "coalesce": True,
             "max_instances": 1,
-            "misfire_grace_time": 3600,
+            "misfire_grace_time": 300,
         },
     )
     logger.debug("Создан AsyncIOScheduler (timezone=%s)", settings.timezone)
@@ -98,20 +73,10 @@ def register_jobs(scheduler: AsyncIOScheduler, bot: Bot) -> None:
     """
     _add_job(
         scheduler,
-        job_id=MORNING_DISPATCH_JOB_ID,
-        name="Утренняя рассылка напоминаний",
-        func=_run_morning_dispatch,
-        hour=settings.dispatch_hour,
-        minute=settings.dispatch_minute,
-        bot=bot,
-    )
-    _add_job(
-        scheduler,
-        job_id=DAY_BEFORE_DISPATCH_JOB_ID,
-        name="Вечерняя рассылка накануне занятий",
-        func=_run_day_before_dispatch,
-        hour=settings.day_before_hour,
-        minute=settings.day_before_minute,
+        job_id=DISPATCH_TICK_JOB_ID,
+        name="Проверка правил напоминаний",
+        func=_run_dispatch_tick,
+        minute=f"*/{DISPATCH_TICK_MINUTES}",
         bot=bot,
     )
 
@@ -122,8 +87,7 @@ def _add_job(
     job_id: str,
     name: str,
     func: Callable[..., Any],
-    hour: int,
-    minute: int,
+    minute: str,
     bot: Bot,
 ) -> None:
     """Добавляет одну cron-задачу и логирует её расписание.
@@ -133,14 +97,12 @@ def _add_job(
         job_id: Идентификатор задачи.
         name: Человекочитаемое имя задачи.
         func: Корутина задачи.
-        hour: Час запуска.
-        minute: Минуты запуска.
+        minute: Минуты запуска (cron-выражение, например ``*/5``).
         bot: Экземпляр aiogram-бота.
     """
     job = scheduler.add_job(
         func,
         trigger=CronTrigger(
-            hour=hour,
             minute=minute,
             timezone=settings.timezone,
         ),
@@ -150,9 +112,8 @@ def _add_job(
         kwargs={"bot": bot},
     )
     logger.info(
-        "Задача %r зарегистрирована на %02d:%02d (%s), ближайший запуск: %s",
+        "Задача %r зарегистрирована (минуты: %s, %s), ближайший запуск: %s",
         job_id,
-        hour,
         minute,
         settings.timezone,
         # До старта планировщика job ещё не в очереди и next_run_time отсутствует.
@@ -160,8 +121,8 @@ def _add_job(
     )
 
 
-async def _run_morning_dispatch(bot: Bot) -> DispatchResult | None:
-    """Обёртка запуска утренней рассылки с защитой от дублирования.
+async def _run_dispatch_tick(bot: Bot) -> DispatchResult | None:
+    """Обёртка периодической проверки правил напоминаний.
 
     Открывает собственную сессию БД, так как выполняется вне HTTP-запроса.
 
@@ -169,55 +130,15 @@ async def _run_morning_dispatch(bot: Bot) -> DispatchResult | None:
         bot: Экземпляр aiogram-бота.
 
     Returns:
-        Итог рассылки или None, если рассылка уже выполнялась сегодня.
+        Итог рассылки (всегда, включая пустой прогон).
     """
-    global _last_dispatch_date  # noqa: PLW0603
-
     from app.db.base import get_session
     from app.db.repository import Repository
     from app.scheduler.dispatch_service import MorningDispatchService
 
     async with get_session() as session:
         service = MorningDispatchService(Repository(session), bot)
-        today = service.today()
-
-        if _last_dispatch_date == today:
-            logger.info("Рассылка на %s уже выполнялась — пропуск", today.isoformat())
-            return None
-
-        result = await service.run(dispatch_date=today)
-        _last_dispatch_date = today
-        return result
-
-
-async def _run_day_before_dispatch(bot: Bot) -> DispatchResult | None:
-    """Обёртка запуска вечерней рассылки с защитой от дублирования.
-
-    Открывает собственную сессию БД, так как выполняется вне HTTP-запроса.
-
-    Args:
-        bot: Экземпляр aiogram-бота.
-
-    Returns:
-        Итог рассылки или None, если рассылка уже выполнялась сегодня.
-    """
-    global _last_day_before_date  # noqa: PLW0603
-
-    from app.db.base import get_session
-    from app.db.repository import Repository
-    from app.scheduler.dispatch_service import MorningDispatchService
-
-    async with get_session() as session:
-        service = MorningDispatchService(Repository(session), bot)
-        today = service.today()
-
-        if _last_day_before_date == today:
-            logger.info("Вечерняя рассылка на %s уже выполнялась — пропуск", today.isoformat())
-            return None
-
-        result = await service.run_day_before(dispatch_date=today)
-        _last_day_before_date = today
-        return result
+        return await service.run_due()
 
 
 def start_scheduler(scheduler: AsyncIOScheduler) -> None:
