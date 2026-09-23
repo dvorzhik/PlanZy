@@ -378,7 +378,6 @@ class TestReminderRule:
         assert rule.id is not None
         assert rule.is_enabled is True
         assert rule.channel == "telegram"
-        assert rule.offset_minutes is None
 
     async def test_unique_per_tenant_and_kind(self, session: AsyncSession) -> None:
         """Нельзя создать два правила одного типа у одного тенанта."""

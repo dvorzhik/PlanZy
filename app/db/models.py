@@ -479,9 +479,6 @@ class ReminderRule(Base):
     time_of_day: Mapped[str | None] = mapped_column(
         String(5), nullable=True, comment="Время отправки ЧЧ:ММ (локальное время тренера)"
     )
-    offset_minutes: Mapped[int | None] = mapped_column(
-        Integer, nullable=True, comment="Сдвиг в минутах (например, за 120 минут до занятия)"
-    )
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     channel: Mapped[str] = mapped_column(
         String(16), default="telegram", nullable=False, comment="Канал доставки напоминания"

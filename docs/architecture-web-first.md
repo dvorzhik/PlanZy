@@ -41,7 +41,6 @@
 | `lesson_price` | `Float` | Стоимость одного занятия |
 | `currency` | `String(8)` | Валюта, по умолчанию `ILS` |
 | `payment_instructions` | `Text`, nullable | Порядок оплаты: реквизиты, правила, скидки |
-| `low_balance_threshold` | `Integer` | Порог «пора напомнить об оплате», по умолчанию 1 |
 
 ### 2.3. Новая таблица `schedule_slots`
 
@@ -92,15 +91,14 @@
 |---|---|---|
 | `id` | `Integer` PK | |
 | `tenant_id` | FK → `tenants.id` CASCADE | |
-| `kind` | `String(24)` | `day_before` / `morning_of` / `low_balance` |
+| `kind` | `String(24)` | `day_before` / `morning_of` |
 | `time_of_day` | `String(5)`, nullable | Время отправки `ЧЧ:ММ` |
-| `offset_minutes` | `Integer`, nullable | Сдвиг от начала занятия (для `day_before`) |
 | `is_enabled` | `Boolean` | Включено ли правило |
-| `channel` | `String(16)` | `telegram` (пока единственный) |
+| `channel` | `String(16)` | `telegram` |
 | `created_at` | `DateTime` | |
 
 Ограничения и индексы:
-- `CheckConstraint` на `kind IN ('day_before','morning_of','low_balance')`
+- `CheckConstraint` на `kind IN ('day_before','morning_of')`
 - `UniqueConstraint('tenant_id', 'kind')` — одно правило каждого типа на тренера
 
 ### 2.6. Новая таблица `lesson_share_links`
@@ -310,7 +308,7 @@ sequenceDiagram
    - `settings.lesson_price` и `settings.currency` → поля `tenants`.
 3. Сгенерировать `admin_token` для каждого существующего тенанта.
 4. Создать правила напоминаний по умолчанию для каждого тенанта:
-   `morning_of` в 08:30, `low_balance` при пороге 1.
+   `day_before` в 20:00, `morning_of` в 09:00.
 5. Поля `entities.schedule_days`/`schedule_time` оставить на одну итерацию
    как устаревшие, затем удалить отдельной миграцией.
 

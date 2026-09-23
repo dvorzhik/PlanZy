@@ -1056,17 +1056,16 @@ class TestReminderRuleRepository:
         assert rule.tenant_id == tenant_id
         assert rule.kind == "morning_of"
         assert rule.time_of_day == "08:00"
-        assert rule.offset_minutes is None
         assert rule.is_enabled is True
         assert rule.channel == "telegram"
 
-    async def test_create_with_offset(self, repo: Repository, tenant_id: int) -> None:
-        """Правило «за день» хранит смещение в минутах."""
+    async def test_create_with_channel(self, repo: Repository, tenant_id: int) -> None:
+        """Канал доставки сохраняется вместе с правилом."""
         rule = await repo.reminders.create(
-            tenant_id, "day_before", time_of_day="19:00", offset_minutes=60
+            tenant_id, "day_before", time_of_day="20:00", channel="whatsapp"
         )
 
-        assert rule.offset_minutes == 60
+        assert rule.channel == "whatsapp"
 
     async def test_get_by_kind(self, repo: Repository, tenant_id: int) -> None:
         """Поиск правила по типу в рамках тенанта."""

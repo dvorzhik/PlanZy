@@ -86,7 +86,7 @@ cp .env.example .env      # Linux/macOS
 - `TELEGRAM_BOT_TOKEN` — токен от [@BotFather](https://t.me/BotFather)
 - `OWNER_TELEGRAM_ID` — ваш Telegram user_id (узнать у [@userinfobot](https://t.me/userinfobot))
 - `GEMINI_API_KEY` — ключ из [Google AI Studio](https://aistudio.google.com/app/apikey)
-- `BASE_URL` — публичный домен (например, `https://planzy.dvorzhik.site`)
+- `BASE_URL` — публичный домен (например, `https://planzy.duckdns.org`)
 
 > **Настройки тренера живут в БД, а не в `.env`.** Цена занятия, валюта,
 > часовой пояс и порог низкого баланса хранятся отдельно для каждого тренера
@@ -214,6 +214,21 @@ mypy app
 alembic revision --autogenerate -m "описание изменений"
 alembic upgrade head
 ```
+
+## Деплой
+
+**Рабочий сервер:** `oracle1` (`129.159.151.179`) → `https://planzy.duckdns.org`.
+
+```bash
+# Обновление кода на сервере
+ssh oracle1 "sudo -u planzy -H bash -lc 'cd /opt/planzy/app && ./deploy/deploy.sh'"
+```
+
+Скрипт делает `git pull --ff-only`, обновляет зависимости, применяет миграции,
+перезапускает `planzy.service` и проверяет health-check.
+
+Подробности — в [deploy/README.md](deploy/README.md): таблица параметров сервера,
+бэкапы, откат и диагностика.
 
 ## Архитектурные решения
 

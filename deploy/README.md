@@ -1,14 +1,65 @@
 # PlanZy — инструкция по деплою на VPS
 
-Пошаговое руководство по развёртыванию PlanZy на VPS (Timeweb / Oracle Cloud)
-под Ubuntu 22.04/24.04 LTS.
+Пошаговое руководство по развёртыванию PlanZy на VPS под Ubuntu 24.04 LTS.
 
 **Итоговая схема:**
 
 ```
 Интернет → Nginx (443, SSL) → uvicorn 127.0.0.1:8000
                                   └── PlanZy (FastAPI + aiogram polling + APScheduler)
-                                          └── SQLite (WAL) /opt/planzy/tutor.sqlite3
+                                          └── SQLite (WAL) /opt/planzy/app/tutor.sqlite3
+```
+
+---
+
+## Текущий рабочий сервер
+
+> Раздел описывает **фактически используемый** сервер. Ниже в разделах 9.1–9.9
+> приведена общая процедура первичной установки — она нужна, если поднимается
+> новый сервер с нуля.
+
+| Параметр | Значение |
+|---|---|
+| SSH-алиас | `oracle1` |
+| Хост | `129.159.151.179` (Oracle Cloud, США) |
+| Hostname | `roomie` |
+| Пользователь SSH | `ubuntu` (ключ `~/.ssh/roomie_key`) |
+| ОС | Ubuntu 24.04.4 LTS |
+| Часовой пояс | `Asia/Jerusalem` (IDT, +0300) |
+| Публичный домен | `https://planzy.duckdns.org` |
+| Каталог проекта | `/opt/planzy/app` |
+| Пользователь сервиса | `planzy` (система, `--home /opt/planzy`) |
+| systemd-сервис | `planzy.service` (enabled, active) |
+| Python | 3.12.3 (`/opt/planzy/app/.venv`) |
+| Порт приложения | `127.0.0.1:8000` (uvicorn, `--workers 1`) |
+| База данных | `/opt/planzy/app/tutor.sqlite3` (SQLite WAL) |
+| Бэкапы | `/opt/planzy/app/backups/`, cron `0 3 * * *` |
+| Логи | `journalctl -u planzy` |
+
+Другие серверы (не этим приложением заняты, чтобы не путать):
+
+| SSH-алиас | Что там |
+|---|---|
+| `timeweb` | GeminiPoint и DrawStory |
+| `oracle2` | ZenRead, Telegram-боты (kakheti, nahariya, vizbor, yamometer) |
+
+### Быстрые команды
+
+```bash
+# Статус и логи
+ssh oracle1
+sudo systemctl status planzy --no-pager
+sudo journalctl -u planzy -f
+
+# Обновление кода (см. подробнее ниже)
+ssh oracle1 "sudo -u planzy -H bash -lc 'cd /opt/planzy/app && ./deploy/deploy.sh'"
+
+# Health-check
+curl -s https://planzy.duckdns.org/health
+
+# Диагностика напоминаний и планировщика
+ssh oracle1 "sudo -u planzy bash -c 'cd /opt/planzy/app && .venv/bin/python scripts/diag_reminders.py'"
+ssh oracle1 "sudo -u planzy bash -c 'cd /opt/planzy/app && .venv/bin/python scripts/diag_scheduler.py'"
 ```
 
 ---
@@ -42,8 +93,8 @@ sudo ufw status
 sudo adduser --system --group --home /opt/planzy --shell /bin/bash planzy
 ```
 
-Настройте DNS: A-запись `planzy.dvorzhik.site` → IP вашего VPS.
-Проверьте распространение: `dig +short planzy.dvorzhik.site`.
+Настройте DNS: A-запись `planzy.duckdns.org` → IP вашего VPS.
+Проверьте распространение: `dig +short planzy.duckdns.org`.
 
 ---
 
@@ -51,7 +102,7 @@ sudo adduser --system --group --home /opt/planzy --shell /bin/bash planzy
 
 ```bash
 sudo -u planzy -H bash
-cd /opt/planzy
+cd /opt/planzy/app
 
 # Клонируем в текущую директорию (точка в конце обязательна)
 git clone <URL_РЕПОЗИТОРИЯ> .
@@ -70,7 +121,7 @@ python3.12 -m venv .venv
 ## 9.3 Настройка .env на сервере
 
 ```bash
-cd /opt/planzy
+cd /opt/planzy/app
 cp .env.example .env
 nano .env
 ```
@@ -82,7 +133,7 @@ nano .env
 | `TELEGRAM_BOT_TOKEN` | реальный токен от @BotFather |
 | `OWNER_TELEGRAM_ID` | ваш Telegram user_id (узнать у @userinfobot) |
 | `GEMINI_API_KEY` | ключ из Google AI Studio |
-| `BASE_URL` | `https://planzy.dvorzhik.site` |
+| `BASE_URL` | `https://planzy.duckdns.org` |
 | `APP_ENV` | `production` |
 | `LOG_LEVEL` | `INFO` |
 
@@ -100,7 +151,7 @@ chmod 600 .env
 ## 9.4 Миграции Alembic и первый тенант
 
 ```bash
-cd /opt/planzy
+cd /opt/planzy/app
 
 # Применяем миграции
 .venv/bin/alembic upgrade head
@@ -124,7 +175,7 @@ sqlite3 tutor.sqlite3 ".tables"
 ## 9.5 systemd-юнит
 
 ```bash
-sudo cp /opt/planzy/deploy/planzy.service /etc/systemd/system/planzy.service
+sudo cp /opt/planzy/app/deploy/planzy.service /etc/systemd/system/planzy.service
 sudo systemctl daemon-reload
 sudo systemctl enable planzy
 sudo systemctl start planzy
@@ -255,7 +306,7 @@ sleep 8
 sudo systemctl status planzy --no-pager  # снова active
 
 # Проверка бота: напишите боту в Telegram — он должен ответить
-# Проверка веба: откройте https://planzy.dvorzhik.site/l/{token}
+# Проверка веба: откройте https://planzy.duckdns.org/
 ```
 
 Мониторинг:
@@ -346,5 +397,49 @@ sudo systemctl restart planzy
 | Бот не отвечает | неверный `TELEGRAM_BOT_TOKEN` или `OWNER_TELEGRAM_ID` | проверить `.env`, `journalctl -u planzy` |
 | `502 Bad Gateway` | сервис не запущен | `systemctl status planzy`, смотреть лог |
 | `Conflict: terminated by other getUpdates` | запущено два экземпляра | `pkill -f uvicorn`, оставить один сервис |
-| Рассылка не приходит | неверный `TIMEZONE` | `timedatectl`, проверить `TIMEZONE` в `.env` |
+| Рассылка не приходит в указанное время | правило выключено или время указано неверно | `/admin/reminders`: время берётся из правила, `journalctl -u planzy \| grep 'Проверка'` |
+| Рассылка не приходит вообще | нет занятий по расписанию на нужную дату | `.venv/bin/python scripts/diag_reminders.py` |
+| Часовой пояс сбит | `tenants.timezone` не совпадает с реальным | `/admin/settings` → «Часовой пояс», затем `timedatectl` |
 | `UnicodeEncodeError` в скриптах | локаль не UTF-8 | `PYTHONIOENCODING=utf-8` (уже задан в юните) |
+
+---
+
+## Как работает рассылка напоминаний
+
+Чтобы не искать причину «напоминание пришло не вовремя» вслепую.
+
+**Модель.** Правило (`reminder_rules`) состоит из двух значимых полей:
+
+| Поле | Смысл |
+|---|---|
+| `kind` | *какой день*: `morning_of` — занятие сегодня, `day_before` — занятие завтра |
+| `time_of_day` | *во сколько* отправить (локальное время тренера, `ЧЧ:ММ`) |
+
+Больше ничего на время не влияет. Значения из `.env`
+(`MORNING_DISPATCH_TIME` / `DAY_BEFORE_DISPATCH_TIME`) **рассылка не использует** —
+они оставлены только для `scripts/diag_scheduler.py`.
+
+**Механика.**
+
+1. Планировщик просыпается по задаче-тику `reminder_tick` каждые
+   `DISPATCH_TICK_MINUTES` (5) минут — см. `app/scheduler/scheduler.py`.
+2. `MorningDispatchService.run_due()` берёт включённые правила всех активных
+   тенантов и для каждого правила собирает занятия нужной даты.
+3. Момент отправки = дата занятия + `time_of_day`, в часовом поясе тенанта
+   (`tenants.timezone`, откат на `TIMEZONE` из `.env`).
+4. Напоминание уходит, если момент наступил и прошло не больше
+   `SEND_WINDOW` (1 час). Просроченные напоминания после простоя **не**
+   отправляются — это защита, а не поломка.
+5. Повторная отправка невозможна: журнал `dispatch_log` хранит уникальную
+   комбинацию `tenant_id + entity_id + rule_kind + dispatch_date`.
+
+**Проверка.** В логе видны обе строки на каждый тик:
+
+```
+Проверка правил напоминаний на 2026-09-23T20:00:00+03:00: тенантов 1
+Проверка завершена: отправлено 3, без телефона 1, дублей 0, не наступило 0, ошибок 0
+```
+
+Расшифровка: `без телефона` — у ученика нет телефона родителя;
+`дублей` — уже отправляли сегодня; `не наступило` — время правила ещё не пришло.
+

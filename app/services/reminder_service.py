@@ -39,10 +39,6 @@ DEFAULT_TIME_OF_DAY = {
     "morning_of": "09:00",
 }
 
-# Границы смещения правила (в минутах).
-MIN_OFFSET_MINUTES = 0
-MAX_OFFSET_MINUTES = 24 * 60
-
 
 @dataclass(slots=True)
 class ReminderSchedule:
@@ -146,7 +142,6 @@ class ReminderService:
         kind: str,
         *,
         time_of_day: str | None = None,
-        offset_minutes: int | None = None,
         is_enabled: bool = True,
         channel: str = "telegram",
     ) -> ReminderRule:
@@ -156,7 +151,6 @@ class ReminderService:
             tenant_id: Идентификатор тенанта.
             kind: Вид правила.
             time_of_day: Время отправки в формате ``ЧЧ:ММ``.
-            offset_minutes: Смещение в минутах.
             is_enabled: Включено ли правило.
             channel: Канал доставки.
 
@@ -170,7 +164,6 @@ class ReminderService:
         payload = self._validate(
             code,
             time_of_day=time_of_day,
-            offset_minutes=offset_minutes,
             channel=channel,
         )
 
@@ -202,8 +195,8 @@ class ReminderService:
         Args:
             tenant_id: Идентификатор тенанта.
             rule_id: Идентификатор правила.
-            **fields: Изменяемые поля (``time_of_day``, ``offset_minutes``,
-                ``is_enabled``, ``channel``).
+            **fields: Изменяемые поля (``time_of_day``, ``is_enabled``,
+                ``channel``).
 
         Returns:
             Обновлённое правило или ``None``.
@@ -218,15 +211,6 @@ class ReminderService:
             if _parse_time(value) is None:
                 raise ValueError(f"Некорректное время напоминания: {value!r}. Ожидается ЧЧ:ММ.")
             payload["time_of_day"] = value
-
-        if "offset_minutes" in fields and fields["offset_minutes"] is not None:
-            offset = int(fields["offset_minutes"])  # type: ignore[arg-type]
-            if not MIN_OFFSET_MINUTES <= offset <= MAX_OFFSET_MINUTES:
-                raise ValueError(
-                    f"Смещение должно быть в диапазоне "
-                    f"{MIN_OFFSET_MINUTES}…{MAX_OFFSET_MINUTES} минут."
-                )
-            payload["offset_minutes"] = offset
 
         if "channel" in fields and fields["channel"] is not None:
             channel = str(fields["channel"]).strip().lower()
@@ -364,7 +348,6 @@ class ReminderService:
         kind: str,
         *,
         time_of_day: str | None,
-        offset_minutes: int | None,
         channel: str,
     ) -> dict[str, object]:
         """Проверяет параметры правила и приводит их к нужным типам.
@@ -372,7 +355,6 @@ class ReminderService:
         Args:
             kind: Нормализованный вид правила.
             time_of_day: Время отправки.
-            offset_minutes: Смещение в минутах.
             channel: Канал доставки.
 
         Returns:
@@ -393,5 +375,4 @@ class ReminderService:
         if value is None or _parse_time(value) is None:
             raise ValueError(f"Некорректное время напоминания: {value!r}. Ожидается ЧЧ:ММ.")
         payload["time_of_day"] = value
-        payload["offset_minutes"] = None
         return payload

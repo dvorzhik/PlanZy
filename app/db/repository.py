@@ -851,7 +851,6 @@ class ReminderRuleRepository:
         tenant_id: int,
         kind: str,
         time_of_day: str | None = None,
-        offset_minutes: int | None = None,
         is_enabled: bool = True,
         channel: str = "telegram",
     ) -> ReminderRule:
@@ -860,7 +859,6 @@ class ReminderRuleRepository:
             tenant_id=tenant_id,
             kind=kind,
             time_of_day=time_of_day,
-            offset_minutes=offset_minutes,
             is_enabled=is_enabled,
             channel=channel,
         )
@@ -898,7 +896,7 @@ class ReminderRuleRepository:
 
     async def update(self, tenant_id: int, rule_id: int, **fields: Any) -> ReminderRule | None:
         """Обновляет поля правила."""
-        allowed = {"time_of_day", "offset_minutes", "is_enabled", "channel"}
+        allowed = {"time_of_day", "is_enabled", "channel"}
         payload = {key: value for key, value in fields.items() if key in allowed}
         if not payload:
             return await self.get_by_id(tenant_id, rule_id)
