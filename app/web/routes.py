@@ -96,7 +96,7 @@ async def _build_public_context(
         "slots": slots,
         "whatsapp_url": whatsapp.build_plain_link(
             "+972534766343",
-            f"Здравствуйте, Александр! Пишу по занятиям ({dossier.name}).",
+            f"Доброго дня! Пишу по занятиям ({dossier.name}).",
         ),
         "has_phone": True,
     }
@@ -215,7 +215,7 @@ async def shared_lesson(
         "entity": entity,
         "whatsapp_url": whatsapp.build_plain_link(
             "+972534766343",
-            f"Здравствуйте, Александр! Пишу по занятию ({entity.name}).",
+            f"Доброго дня! Пишу по занятию ({entity.name}).",
         ),
         "has_phone": True,
     }
@@ -259,7 +259,7 @@ async def student_dossier(
         "entity": entity,
         "whatsapp_url": whatsapp.build_plain_link(
             entity.parent_phone,
-            f"Здравствуйте! Пишу по занятиям ({dossier.name}).",
+            f"Доброго дня! Пишу по занятиям ({dossier.name}).",
         ),
         "has_phone": bool(entity.parent_phone),
     }

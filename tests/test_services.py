@@ -11,7 +11,7 @@ from datetime import date
 
 import pytest
 
-from app.db.models import Entity
+from app.db.models import Entity, Lesson
 from app.db.repository import Repository
 from app.parsers.schemas import LessonParseResult, PaymentInfo
 from app.services.dossier_service import DossierService
@@ -950,6 +950,58 @@ class TestWhatsAppLinkService:
         assert "Напоминаю о занятии" in message.text
         assert "пополнить баланс" not in message.text
 
+    def test_build_reminder_greeting_is_dobrogo_dnya(self) -> None:
+        """Приветствие в напоминании — «Доброго дня!»."""
+        entity = Entity(tenant_id=1, name="Миша", parent_phone="972501234567")
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_reminder(
+            entity, lesson_date=TODAY, lesson_time="17:45"
+        )
+
+        assert message.text.startswith("Доброго дня!")
+        assert "Здравствуйте" not in message.text
+
+    def test_build_reminder_shows_lesson_time_after_date(self) -> None:
+        """Время занятия подставляется сразу после даты."""
+        entity = Entity(tenant_id=1, name="Миша", parent_phone="972501234567")
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_reminder(
+            entity, lesson_date=TODAY, lesson_time="17:45"
+        )
+
+        assert f"📅 {TODAY:%d.%m.%Y} в 17:45" in message.text
+
+    def test_build_reminder_ignores_legacy_schedule_time(self) -> None:
+        """Устаревшее поле Entity.schedule_time больше не используется.
+
+        После перехода на web-first это поле пустое у всех, поэтому время
+        берётся только из параметра ``lesson_time``.
+        """
+        entity = Entity(
+            tenant_id=1,
+            name="Миша",
+            parent_phone="972501234567",
+            schedule_time="08:00",
+        )
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_reminder(
+            entity, lesson_date=TODAY, lesson_time="17:45"
+        )
+
+        assert "17:45" in message.text
+        assert "08:00" not in message.text
+
+    def test_build_reminder_without_time_has_no_time_part(self) -> None:
+        """Без времени занятия строка даты остаётся без «в ЧЧ:ММ»."""
+        entity = Entity(tenant_id=1, name="Миша", parent_phone="972501234567")
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_reminder(
+            entity, lesson_date=TODAY
+        )
+
+        assert f"📅 {TODAY:%d.%m.%Y}" in message.text
+        assert " в " not in message.text
+
     async def test_build_card_url_requires_token(self, repo: Repository, tenant_id: int) -> None:
         """Ссылка на карточку строится из публичного токена."""
         entities = EntityService(repo)
@@ -1006,6 +1058,84 @@ class TestWhatsAppLinkService:
         assert message.chat_url == "https://chat.whatsapp.com/AbCdEf123"
         assert message.url == "https://chat.whatsapp.com/AbCdEf123"
         assert message.has_phone is True
+
+    def test_build_reminder_for_group_includes_time(self) -> None:
+        """Напоминание группе тоже содержит дату и время занятия."""
+        group = Entity(
+            tenant_id=1,
+            name="Новички",
+            entity_type="group",
+            whatsapp_chat_url="https://chat.whatsapp.com/AbCdEf123",
+        )
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_reminder(
+            group, lesson_date=TODAY, lesson_time="18:00"
+        )
+
+        assert message.text.startswith("Доброго дня!")
+        assert f"📅 {TODAY:%d.%m.%Y} в 18:00" in message.text
+
+    def test_group_link_has_no_prefilled_text(self) -> None:
+        """Приглашение в чат не содержит ?text= — ограничение WhatsApp.
+
+        У ссылок chat.whatsapp.com нет параметра подстановки сообщения,
+        поэтому текст для группы отправляется отдельно в Telegram.
+        """
+        group = Entity(
+            tenant_id=1,
+            name="Новички",
+            entity_type="group",
+            whatsapp_chat_url="https://chat.whatsapp.com/AbCdEf123",
+        )
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_reminder(
+            group, lesson_date=TODAY, lesson_time="18:00"
+        )
+
+        assert "?text=" not in message.url
+        # Текст всё равно сформирован — его отправляют отдельным сообщением.
+        assert "Напоминаю о занятии" in message.text
+
+    @pytest.mark.parametrize(
+        ("entity_type", "expected"),
+        [
+            ("student", "Доброго дня! Информация по занятиям — Новички."),
+            ("group", "Доброго дня! Информация по группе «Новички»."),
+        ],
+    )
+    def test_dossier_greeting_is_dobrogo_dnya(self, entity_type: str, expected: str) -> None:
+        """Досье родителю и группе начинается с «Доброго дня!»."""
+        entity = Entity(
+            tenant_id=1,
+            name="Новички",
+            entity_type=entity_type,
+            parent_phone="972501234567",
+            whatsapp_chat_url="https://chat.whatsapp.com/AbCdEf123",
+        )
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_dossier_message(
+            entity, "📁 Досье: Новички"
+        )
+
+        assert message.text.startswith(expected)
+        assert "Здравствуйте" not in message.text
+
+    def test_lesson_report_greeting_is_dobrogo_dnya(self) -> None:
+        """Отчёт об уроке начинается с «Доброго дня!»."""
+        entity = Entity(tenant_id=1, name="Миша", parent_phone="972501234567")
+        lesson = Lesson(
+            tenant_id=1,
+            entity_id=1,
+            lesson_date=TODAY,
+            attendance="был",
+        )
+
+        message = WhatsAppLinkService(base_url="https://planzy.duckdns.org").build_lesson_report(
+            entity, lesson
+        )
+
+        assert message.text.startswith("Доброго дня! Отчёт о занятии — Миша.")
+        assert "Здравствуйте" not in message.text
 
     def test_build_dossier_message_for_group(self) -> None:
         """Сообщение досье для группы адресуется в чат и упоминает группу."""

@@ -285,12 +285,16 @@ class TestMorningDispatchService:
         assert "Баланс" not in bot.sent[1]["text"]
         assert "не пополнен" not in bot.sent[1]["text"]
 
-    async def test_reminder_shows_lesson_time(
+    async def test_reminder_shows_time_from_schedule_not_legacy_field(
         self,
         repo: Repository,
         tenant_id: int,
     ) -> None:
-        """Текст напоминания содержит время занятия из слота."""
+        """Время в тексте напоминания берётся из расписания.
+
+        Регрессия: раньше время читалось из устаревшего ``Entity.schedule_time``,
+        которое после перехода на web-first пустое — время не подставлялось.
+        """
         await _seed_student(repo, tenant_id, name="Миша", weekday="mon", start_time="18:30")
         await _enable_rules(repo, tenant_id, "morning_of")
         bot = StubBot()
@@ -298,7 +302,161 @@ class TestMorningDispatchService:
 
         await service.run_due(now=MONDAY_0900)
 
-        assert "18:30" in bot.sent[1]["text"]
+        reminder_text = bot.sent[1]["text"]
+        assert "Доброго дня!" in reminder_text
+        assert f"📅 {MONDAY:%d.%m.%Y} в 18:30" in reminder_text
+
+    async def test_group_reminder_sent_with_chat_button_and_text(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Группе напоминание уходит с кнопкой чата и текстом отдельно.
+
+        Группа не имеет ``parent_phone``, но имеет ссылку на чат — раньше
+        такое напоминание пропускалось. Ссылка-приглашение WhatsApp не
+        поддерживает ?text=, поэтому текст отправляется вторым сообщением.
+        """
+        group = await repo.entities.create(
+            tenant_id,
+            name="Шпринцак 2 - продолжающие",
+            entity_type="group",
+            whatsapp_chat_url="https://chat.whatsapp.com/AbCdEf123",
+        )
+        await repo.schedule.create(
+            tenant_id,
+            entity_id=group.id,
+            weekday="mon",
+            start_time="17:45",
+        )
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        result = await service.run_due(now=MONDAY_0900)
+
+        assert result.messages_sent == 1
+        assert result.skipped_no_phone == 0
+        # 1 заголовок + 1 напоминание + 1 отдельное сообщение с текстом.
+        assert len(bot.sent) == 3
+
+        reminder = bot.sent[1]
+        markup = reminder.get("reply_markup")
+        assert markup is not None
+        button = markup.inline_keyboard[0][0]
+        assert button.url == "https://chat.whatsapp.com/AbCdEf123"
+        assert "чат группы" in button.text
+        assert f"📅 {MONDAY:%d.%m.%Y} в 17:45" in reminder["text"]
+
+        # Текст для копирования в чат — отдельным сообщением.
+        copied = bot.sent[2]["text"]
+        assert copied.startswith("<code>")
+        assert "Доброго дня!" in copied
+        assert f"📅 {MONDAY:%d.%m.%Y} в 17:45" in copied
+
+    async def test_student_reminder_has_no_extra_copy_message(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Ученику текст не дублируется — он уже подставлен в ссылку wa.me."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _enable_rules(repo, tenant_id, "morning_of")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        await service.run_due(now=MONDAY_0900)
+
+        # Только заголовок и напоминание.
+        assert len(bot.sent) == 2
+
+    async def test_header_sent_once_per_day_for_matured_rule(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Заголовок не повторяется на каждом тике.
+
+        Регрессия: правило остаётся «созревшим» весь SEND_WINDOW (1 час),
+        поэтому при тике каждые 5 минут заголовок «Доброе утро!» уходил
+        повторно 12 раз. Защита от дублей стояла только на напоминаниях.
+        """
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        # Имитируем несколько тиков внутри окна: 09:00, 09:05, 09:10, 09:15.
+        for minute in (0, 5, 10, 15):
+            await service.run_due(now=datetime(2026, 9, 14, 9, minute))
+
+        headers = [msg for msg in bot.sent if "Доброе утро" in msg["text"]]
+        reminders = [msg for msg in bot.sent if "Напоминаю о занятии" not in msg["text"]]
+        assert len(headers) == 1, f"заголовок ушёл {len(headers)} раз вместо одного"
+        assert len(reminders) == 1
+
+    async def test_header_sent_again_next_day(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """На следующий день заголовок отправляется снова."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _seed_student(repo, tenant_id, name="Аня", weekday="tue")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        monday = await service.run_due(now=MONDAY_0900)
+        tuesday = await service.run_due(now=datetime(2026, 9, 15, 9, 0))
+
+        assert monday.headers_sent == 1
+        assert tuesday.headers_sent == 1
+
+    async def test_day_before_and_morning_headers_are_independent(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Заголовки правил morning_of и day_before считаются отдельно."""
+        await _seed_student(repo, tenant_id, name="Миша", weekday="mon")
+        await _seed_student(repo, tenant_id, name="Вторник", weekday="tue")
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        await _enable_rules(repo, tenant_id, "day_before", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        result = await service.run_due(now=MONDAY_0900)
+
+        # Утреннее правило шлёт заголовок по занятиям на сегодня,
+        # вечернее — по занятиям на завтра: это два разных заголовка.
+        assert result.headers_sent == 2
+
+    async def test_group_copy_message_escapes_html(
+        self,
+        repo: Repository,
+        tenant_id: int,
+    ) -> None:
+        """Спецсимволы в имени группы экранируются для Telegram HTML."""
+        group = await repo.entities.create(
+            tenant_id,
+            name="Группа <новички> & друзья",
+            entity_type="group",
+            whatsapp_chat_url="https://chat.whatsapp.com/AbCdEf123",
+        )
+        await repo.schedule.create(
+            tenant_id, entity_id=group.id, weekday="mon", start_time="17:45"
+        )
+        await _enable_rules(repo, tenant_id, "morning_of", time_of_day="09:00")
+        bot = StubBot()
+        service = MorningDispatchService(repo, bot)  # type: ignore[arg-type]
+
+        await service.run_due(now=MONDAY_0900)
+
+        copied = bot.sent[2]["text"]
+        assert "&lt;новички&gt;" in copied
+        assert "&amp;" in copied
+        assert "<новички>" not in copied
 
     async def test_telegram_error_is_collected(
         self,

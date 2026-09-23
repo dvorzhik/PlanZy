@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from html import escape
 from typing import TYPE_CHECKING
 
 from aiogram import Bot
@@ -87,6 +88,7 @@ class DispatchResult:
         tenants_processed: Сколько тенантов обработано.
         entities_total: Сколько занятий попало в выборку.
         messages_sent: Сколько сообщений успешно отправлено.
+        headers_sent: Сколько заголовков рассылки отправлено.
         skipped_no_phone: Сколько занятий пропущено из-за отсутствия телефона.
         skipped_duplicate: Сколько напоминаний пропущено как уже отправленные.
         skipped_not_due: Сколько напоминаний пропущено как ещё не наступившие.
@@ -97,6 +99,7 @@ class DispatchResult:
     tenants_processed: int = 0
     entities_total: int = 0
     messages_sent: int = 0
+    headers_sent: int = 0
     skipped_no_phone: int = 0
     skipped_duplicate: int = 0
     skipped_not_due: int = 0
@@ -214,25 +217,33 @@ class MorningDispatchService:
         result = DispatchResult(dispatch_date=moment.date())
 
         tenants = await self._repo.tenants.list_active()
-        logger.info(
-            "Проверка правил напоминаний на %s: тенантов %s",
-            moment.isoformat(),
-            len(tenants),
-        )
 
         for tenant in tenants:
             result.tenants_processed += 1
             await self._dispatch_due_for_tenant(tenant, moment, result)
 
-        logger.info(
-            "Проверка завершена: отправлено %s, без телефона %s, дублей %s, "
-            "не наступило %s, ошибок %s",
-            result.messages_sent,
-            result.skipped_no_phone,
-            result.skipped_duplicate,
-            result.skipped_not_due,
-            len(result.errors),
-        )
+        # Тик выполняется каждые DISPATCH_TICK_MINUTES минут, поэтому рутинный
+        # «пустой» прогон пишем в debug: иначе лог забивается сотнями
+        # одинаковых строк в сутки и реальные отправки в нём не видны.
+        if result.messages_sent or result.headers_sent or result.errors:
+            logger.info(
+                "Рассылка %s: заголовков %s, напоминаний %s, без телефона %s, "
+                "дублей %s, не наступило %s, ошибок %s",
+                moment.date().isoformat(),
+                result.headers_sent,
+                result.messages_sent,
+                result.skipped_no_phone,
+                result.skipped_duplicate,
+                result.skipped_not_due,
+                len(result.errors),
+            )
+        else:
+            logger.debug(
+                "Тик %s: отправлять нечего (не наступило %s, дублей %s)",
+                moment.strftime("%H:%M"),
+                result.skipped_not_due,
+                result.skipped_duplicate,
+            )
         return result
 
     # ------------------------------------------------------------------
@@ -294,17 +305,42 @@ class MorningDispatchService:
 
             result.entities_total += len(due_lessons)
 
-            header = self._build_header(target_date, len(due_lessons))
-            try:
-                await self._bot.send_message(tenant.telegram_user_id, header)
-            except TelegramAPIError as exc:
-                message = f"Заголовок тенанту {tenant.id}: {exc}"
-                logger.error(message)
-                result.errors.append(message)
-                continue
+            # Заголовок уходит один раз в день на правило: правило остаётся
+            # «созревшим» всю SEND_WINDOW, и без этой проверки заголовок
+            # повторялся бы на каждом тике (каждые 5 минут).
+            if not await self._header_already_sent(tenant.id, rule.kind, target_date):
+                header = self._build_header(target_date, len(due_lessons))
+                try:
+                    await self._bot.send_message(tenant.telegram_user_id, header)
+                except TelegramAPIError as exc:
+                    message = f"Заголовок тенанту {tenant.id}: {exc}"
+                    logger.error(message)
+                    result.errors.append(message)
+                    continue
+                await self._repo.dispatch_log.create(tenant.id, rule.kind, target_date)
+                result.headers_sent += 1
+                logger.info(
+                    "Заголовок %s отправлен тенанту %s (занятий: %s)",
+                    rule.kind,
+                    tenant.id,
+                    len(due_lessons),
+                )
 
             for lesson in due_lessons:
                 await self._send_rule_reminder(tenant, lesson, rule, target_date, moment, result)
+
+    async def _header_already_sent(self, tenant_id: int, rule_kind: str, target_date: date) -> bool:
+        """Проверяет, отправлялся ли заголовок по правилу в этот день.
+
+        Args:
+            tenant_id: Идентификатор тенанта.
+            rule_kind: Вид правила.
+            target_date: Дата занятия.
+
+        Returns:
+            ``True``, если заголовок уже отправлен.
+        """
+        return await self._repo.dispatch_log.was_sent(tenant_id, rule_kind, target_date)
 
     def _is_due(self, rule: ReminderRule, lesson: PlannedLesson, now: datetime) -> bool:
         """Проверяет, наступил ли момент отправки правила для занятия.
@@ -379,9 +415,12 @@ class MorningDispatchService:
             logger.debug("Ученик %s не найден — пропуск", lesson.entity_id)
             return
 
-        if not entity.parent_phone:
+        if not entity.parent_phone and not entity.whatsapp_chat_url:
             result.skipped_no_phone += 1
-            logger.debug("Ученик %s без телефона родителя — пропуск", entity.id)
+            logger.debug(
+                "Сущность %s без телефона и без чата WhatsApp — пропуск",
+                entity.id,
+            )
             return
 
         already_sent = await self._repo.dispatch_log.was_sent(
@@ -399,16 +438,27 @@ class MorningDispatchService:
             )
             return
 
-        message = self._whatsapp.build_reminder(entity, lesson_date=target_date)
+        message = self._whatsapp.build_reminder(
+            entity,
+            lesson_date=target_date,
+            lesson_time=lesson.start_time,
+        )
         text = self._build_entity_text(entity, lesson, rule, message.text)
 
-        keyboard = self._build_keyboard(entity, message.url)
+        keyboard = self._build_keyboard(entity, message.url, is_chat=bool(message.chat_url))
         try:
             await self._bot.send_message(
                 tenant.telegram_user_id,
                 text,
                 reply_markup=keyboard,
             )
+            # Ссылка-приглашение в групповой чат не поддерживает ?text=,
+            # поэтому текст отправляем отдельным сообщением: его можно
+            # скопировать долгим тапом и вставить в открывшемся чате.
+            # Имя группы может содержать < или & — экранируем под HTML.
+            if message.chat_url:
+                safe = escape(message.text, quote=False)
+                await self._bot.send_message(tenant.telegram_user_id, f"<code>{safe}</code>")
         except TelegramAPIError as exc:
             error = f"Напоминание {entity.name!r}: {exc}"
             logger.error(error)
@@ -468,12 +518,13 @@ class MorningDispatchService:
         return f"👤 <b>{entity.name}</b>\n{time_line}\n\n<i>{reminder_text}</i>"
 
     @staticmethod
-    def _build_keyboard(entity: Entity, whatsapp_url: str):
+    def _build_keyboard(entity: Entity, whatsapp_url: str, *, is_chat: bool = False):
         """Собирает inline-клавиатуру с кнопкой WhatsApp.
 
         Args:
             entity: Ученик или группа.
-            whatsapp_url: Ссылка wa.me с текстом напоминания.
+            whatsapp_url: Ссылка wa.me или приглашение в групповой чат.
+            is_chat: True, если получатель — групповой чат, а не родитель.
 
         Returns:
             Inline-клавиатура или None, если ссылка недоступна.
@@ -482,11 +533,15 @@ class MorningDispatchService:
 
         if not whatsapp_url:
             return None
+        if is_chat:
+            label = f"📲 Открыть чат группы ({entity.name})"
+        else:
+            label = f"📲 Написать родителю ({entity.name})"
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text=f"📲 Написать родителю ({entity.name})",
+                        text=label,
                         url=whatsapp_url,
                     )
                 ]

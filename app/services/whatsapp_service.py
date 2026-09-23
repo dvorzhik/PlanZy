@@ -78,7 +78,7 @@ class WhatsAppLinkService:
             Готовое сообщение со ссылкой wa.me.
         """
         lines: list[str] = [
-            f"Здравствуйте! Отчёт о занятии — {entity.name}.",
+            f"Доброго дня! Отчёт о занятии — {entity.name}.",
             "",
             f"📅 Дата: {self._format_date(lesson.lesson_date)}",
         ]
@@ -109,6 +109,7 @@ class WhatsAppLinkService:
         entity: Entity,
         *,
         lesson_date: date | None = None,
+        lesson_time: str | None = None,
     ) -> WhatsAppMessage:
         """Формирует напоминание о занятии (для рассылки и досье).
 
@@ -120,17 +121,23 @@ class WhatsAppLinkService:
         * если ничего не задано — ссылка без адресата, WhatsApp предложит
           выбрать чат вручную.
 
+        Время начала занятия берётся из переданного ``lesson_time``
+        (фактическое время из расписания, включая переносы и доп. занятия),
+        а не из устаревшего поля ``Entity.schedule_time``: после перехода
+        на web-first оно пустое у всех.
+
         Args:
             entity: Ученик или группа.
             lesson_date: Дата занятия. По умолчанию — сегодня.
+            lesson_time: Время начала занятия в формате ``ЧЧ:ММ``.
 
         Returns:
             Готовое сообщение со ссылкой wa.me.
         """
         when = self._format_date(lesson_date or date.today())
-        time_part = f" в {entity.schedule_time}" if entity.schedule_time else ""
+        time_part = f" в {lesson_time}" if lesson_time else ""
         lines = [
-            f"Здравствуйте! Напоминаю о занятии — {entity.name}.",
+            f"Доброго дня! Напоминаю о занятии — {entity.name}.",
             "",
             f"📅 {when}{time_part}",
         ]
@@ -168,9 +175,9 @@ class WhatsAppLinkService:
             Готовое сообщение со ссылкой.
         """
         if entity.is_group:
-            header = f"Здравствуйте! Информация по группе «{entity.name}»."
+            header = f"Доброго дня! Информация по группе «{entity.name}»."
         else:
-            header = f"Здравствуйте! Информация по занятиям — {entity.name}."
+            header = f"Доброго дня! Информация по занятиям — {entity.name}."
         return self._build_message(
             entity.parent_phone,
             f"{header}\n\n{dossier_text}",
