@@ -270,7 +270,7 @@ class TestStudentsList:
         response = await client.get("/admin/students")
 
         assert response.status_code == 200
-        assert "За месяц" in response.text
+        assert "За " in response.text
         assert "250" in response.text
 
     async def test_list_shows_monthly_debt_for_group(
@@ -296,6 +296,78 @@ class TestStudentsList:
         assert response.status_code == 200
         # 1 проведённое занятие × 100 − 0 платежей = 100.
         assert "100" in response.text
+
+    async def test_list_shows_selected_month_label(
+        self, client: AsyncClient
+    ) -> None:
+        """При выборе прошлого месяца шапка показывает его подпись."""
+        response = await client.get("/admin/students?month=2026-03")
+
+        assert response.status_code == 200
+        assert "март 2026" in response.text
+
+    async def test_list_shows_payments_of_selected_month(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """Платежи прошлого месяца видны при выборе этого месяца."""
+        entity = await repo.entities.create(
+            tenant_id=tenant_id, name="Прошлый плательщик", entity_type="student"
+        )
+        await repo.payments.create(
+            tenant_id=tenant_id,
+            entity_id=entity.id,
+            payment_date=date(2026, 3, 10),
+            amount=480.0,
+            currency="ILS",
+            lessons_added=4,
+        )
+
+        response = await client.get("/admin/students?month=2026-03")
+
+        assert response.status_code == 200
+        assert "480" in response.text
+
+    async def test_list_ignores_payments_outside_selected_month(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """Платёж другого месяца не попадает в выбранный период."""
+        entity = await repo.entities.create(
+            tenant_id=tenant_id, name="Апрельский", entity_type="student"
+        )
+        await repo.payments.create(
+            tenant_id=tenant_id,
+            entity_id=entity.id,
+            payment_date=date(2026, 4, 5),
+            amount=777.0,
+            currency="ILS",
+            lessons_added=3,
+        )
+
+        response = await client.get("/admin/students?month=2026-03")
+
+        assert response.status_code == 200
+        assert "777" not in response.text
+
+    async def test_list_rejects_future_month(self, client: AsyncClient) -> None:
+        """Месяц из будущего откатывается к текущему."""
+        from app.web.admin_students_routes import _month_label
+
+        future = date(2999, 1, 1)
+        response = await client.get("/admin/students?month=2999-01")
+
+        assert response.status_code == 200
+        # Текущий месяц никогда не совпадёт с далёким 2999-м.
+        assert _month_label(future) not in response.text
+
+    async def test_list_has_month_navigation_links(
+        self, client: AsyncClient
+    ) -> None:
+        """Переключатель месяцев содержит ссылки на предыдущий месяц."""
+        response = await client.get("/admin/students")
+
+        assert response.status_code == 200
+        assert "month=" in response.text
+        assert "Предыдущий месяц" in response.text
 
 
 class TestStudentCreate:
@@ -1378,3 +1450,59 @@ class TestStudentHelpers:
         from app.web.admin_students_routes import _sort_entities
 
         assert _sort_entities([]) == []
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("2026-03", date(2026, 3, 1)),
+            ("2025-12", date(2025, 12, 1)),
+        ],
+    )
+    def test_parse_month_valid(self, raw: str, expected: date) -> None:
+        """Корректный ``ГГГГ-ММ`` даёт первое число месяца."""
+        from app.web.admin_students_routes import _parse_month
+
+        assert _parse_month(raw, date(2026, 10, 1)) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [None, "", "   ", "abc", "2026/03", "2026-13", "2999-01"],
+    )
+    def test_parse_month_invalid_falls_back_to_current(self, raw: str | None) -> None:
+        """Мусор и месяц из будущего откатываются к текущему месяцу."""
+        from app.web.admin_students_routes import _parse_month
+
+        today = date(2026, 10, 5)
+
+        assert _parse_month(raw, today) == date(2026, 10, 1)
+
+    def test_parse_month_accepts_current(self) -> None:
+        """Текущий месяц допускается."""
+        from app.web.admin_students_routes import _parse_month
+
+        today = date(2026, 10, 5)
+
+        assert _parse_month("2026-10", today) == date(2026, 10, 1)
+
+    @pytest.mark.parametrize(
+        ("month_start", "delta", "expected"),
+        [
+            (date(2026, 10, 1), -1, date(2026, 9, 1)),
+            (date(2026, 1, 1), -1, date(2025, 12, 1)),
+            (date(2026, 12, 1), 1, date(2027, 1, 1)),
+            (date(2026, 10, 1), 1, date(2026, 11, 1)),
+        ],
+    )
+    def test_shift_month(self, month_start: date, delta: int, expected: date) -> None:
+        """Сдвиг месяца корректно переходит через границы года."""
+        from app.web.admin_students_routes import _shift_month
+
+        assert _shift_month(month_start, delta) == expected
+
+    def test_month_label(self) -> None:
+        """Подпись месяца — «название год» на русском."""
+        from app.web.admin_students_routes import _month_label
+
+        assert _month_label(date(2026, 9, 1)) == "сентябрь 2026"
+        assert _month_label(date(2026, 10, 1)) == "октябрь 2026"
+

@@ -186,6 +186,23 @@ class PaymentService:
         """Возвращает суммарно оплаченную сумму по сущности."""
         return await self._repo.payments.total_amount(tenant_id, entity_id)
 
+    @staticmethod
+    def month_bounds(reference: date) -> tuple[date, date]:
+        """Возвращает границы календарного месяца, содержащего дату.
+
+        Args:
+            reference: Любая дата внутри интересующего месяца.
+
+        Returns:
+            Кортеж ``(первое, последнее)`` число месяца включительно.
+        """
+        month_start = reference.replace(day=1)
+        if month_start.month == 12:
+            next_month = month_start.replace(year=month_start.year + 1, month=1, day=1)
+        else:
+            next_month = month_start.replace(month=month_start.month + 1, day=1)
+        return month_start, next_month - timedelta(days=1)
+
     async def monthly_debt(
         self,
         tenant_id: int,
@@ -193,7 +210,7 @@ class PaymentService:
         *,
         today: date | None = None,
     ) -> float:
-        """Считает долг сущности за текущий календарный месяц.
+        """Считает долг сущности за календарный месяц.
 
         Формула: ``проведённые занятия × цена занятия − платежи месяца``.
         Проведённым считается занятие с заполненным «Примечанием»
@@ -206,18 +223,13 @@ class PaymentService:
             tenant_id: Идентификатор тенанта.
             entity_id: Идентификатор ученика или группы.
             today: Дата, относительно которой определяется месяц. По
-                умолчанию — сегодняшняя дата.
+                умолчанию — сегодняшняя дата. Любая дата внутри месяца
+                даёт один и тот же результат.
 
         Returns:
             Долг за месяц в валюте тенанта (может быть отрицательным).
         """
-        reference = today or date.today()
-        month_start = reference.replace(day=1)
-        if month_start.month == 12:
-            month_end = month_start.replace(year=month_start.year + 1, month=1, day=1)
-        else:
-            month_end = month_start.replace(month=month_start.month + 1, day=1)
-        month_end = month_end - timedelta(days=1)
+        month_start, month_end = self.month_bounds(today or date.today())
 
         conducted = await self._repo.lessons.count_conducted_in_period(
             tenant_id, entity_id, month_start, month_end
@@ -247,13 +259,7 @@ class PaymentService:
             ``price`` (цена занятия), ``charged`` (начислено),
             ``paid`` (оплачено) и ``debt`` (долг).
         """
-        reference = today or date.today()
-        month_start = reference.replace(day=1)
-        if month_start.month == 12:
-            month_end = month_start.replace(year=month_start.year + 1, month=1, day=1)
-        else:
-            month_end = month_start.replace(month=month_start.month + 1, day=1)
-        month_end = month_end - timedelta(days=1)
+        month_start, month_end = self.month_bounds(today or date.today())
 
         conducted = await self._repo.lessons.count_conducted_in_period(
             tenant_id, entity_id, month_start, month_end
@@ -294,18 +300,13 @@ class PaymentService:
         Args:
             tenant_id: Идентификатор тенанта.
             entities: Список учеников и групп тенанта.
-            today: Дата, относительно которой определяется месяц.
+            today: Дата, относительно которой определяется месяц. Любая
+                дата внутри месяца даёт один и тот же результат.
 
         Returns:
             Словарь ``entity_id`` → словарь месячных показателей.
         """
-        reference = today or date.today()
-        month_start = reference.replace(day=1)
-        if month_start.month == 12:
-            month_end = month_start.replace(year=month_start.year + 1, month=1, day=1)
-        else:
-            month_end = month_start.replace(month=month_start.month + 1, day=1)
-        month_end = month_end - timedelta(days=1)
+        month_start, month_end = self.month_bounds(today or date.today())
 
         conducted_map = await self._repo.lessons.conducted_counts_in_period(
             tenant_id, month_start, month_end

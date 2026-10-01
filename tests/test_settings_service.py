@@ -1150,3 +1150,16 @@ class TestPaymentServiceMonthlyOverview:
         )
 
         assert overview[group.id]["debt"] == -300.0
+
+    @pytest.mark.parametrize(
+        ("reference", "expected"),
+        [
+            (date(2026, 9, 15), (date(2026, 9, 1), date(2026, 9, 30))),
+            (date(2026, 2, 5), (date(2026, 2, 1), date(2026, 2, 28))),
+            (date(2026, 12, 31), (date(2026, 12, 1), date(2026, 12, 31))),
+        ],
+    )
+    def test_month_bounds(self, reference: date, expected: tuple[date, date]) -> None:
+        """Границы месяца включают первое и последнее число."""
+        assert PaymentService.month_bounds(reference) == expected
+

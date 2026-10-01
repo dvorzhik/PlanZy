@@ -12,21 +12,50 @@
 
 {% block content %}
 {# ── Месячные показатели ─────────────────────────────────────────── #}
-<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Оплаты от учеников за месяц</p>
-        <p class="mt-1 text-2xl font-bold text-emerald-600">{{ total_paid_students | money }} {{ currency }}</p>
+<div class="mb-6">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-1">
+            <a href="?month={{ prev_month_value }}{% if filters.kind %}&kind={{ filters.kind }}{% endif %}{% if filters.weekday %}&weekday={{ filters.weekday }}{% endif %}"
+               class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-600"
+               title="Предыдущий месяц">‹</a>
+            <span class="min-w-[10rem] text-center text-sm font-semibold text-slate-700">
+                {{ month_label }}
+            </span>
+            {% if next_month_value %}
+                <a href="?month={{ next_month_value }}{% if filters.kind %}&kind={{ filters.kind }}{% endif %}{% if filters.weekday %}&weekday={{ filters.weekday }}{% endif %}"
+                   class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-600"
+                   title="Следующий месяц">›</a>
+            {% else %}
+                <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-300"
+                      title="Это текущий месяц">›</span>
+            {% endif %}
+        </div>
+        {% if not is_current_month %}
+            <a href="/admin/students{% if filters.kind or filters.weekday %}?{% if filters.kind %}kind={{ filters.kind }}{% endif %}{% if filters.kind and filters.weekday %}&{% endif %}{% if filters.weekday %}weekday={{ filters.weekday }}{% endif %}{% endif %}"
+               class="text-sm text-brand-600 hover:underline">Текущий месяц</a>
+        {% endif %}
     </div>
-    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Долг по группам за месяц</p>
-        <p class="mt-1 text-2xl font-bold {% if total_debt_groups > 0 %}text-rose-600{% else %}text-emerald-600{% endif %}">
-            {{ total_debt_groups | money }} {{ currency }}
-        </p>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Оплаты от учеников{% if is_current_month %} за месяц{% else %} — {{ month_label }}{% endif %}
+            </p>
+            <p class="mt-1 text-2xl font-bold text-emerald-600">{{ total_paid_students | money }} {{ currency }}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Долг по группам{% if is_current_month %} за месяц{% else %} — {{ month_label }}{% endif %}
+            </p>
+            <p class="mt-1 text-2xl font-bold {% if total_debt_groups > 0 %}text-rose-600{% else %}text-emerald-600{% endif %}">
+                {{ total_debt_groups | money }} {{ currency }}
+            </p>
+        </div>
     </div>
 </div>
 
 {# ── Фильтры ──────────────────────────────────────────────────────── #}
 <form method="get" action="/admin/students" class="mb-4 flex flex-wrap items-end gap-3">
+    <input type="hidden" name="month" value="{{ month_value }}">
     <label class="flex flex-col gap-1">
         <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Тип</span>
         <select name="kind" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
@@ -52,7 +81,7 @@
     </button>
 
     {% if filters_active %}
-        <a href="/admin/students"
+        <a href="/admin/students?month={{ month_value }}"
            class="inline-flex h-[38px] items-center text-sm text-slate-500 hover:underline">Сбросить</a>
     {% endif %}
 </form>
@@ -66,7 +95,7 @@
                 <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                     <th class="px-4 py-3">Имя</th>
                     <th class="px-4 py-3">Расписание</th>
-                    <th class="px-4 py-3 text-right whitespace-nowrap">За месяц</th>
+                    <th class="px-4 py-3 text-right whitespace-nowrap">За {{ month_label }}</th>
                     <th class="px-4 py-3 text-right whitespace-nowrap">Действия</th>
                 </tr>
             </thead>

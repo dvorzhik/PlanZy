@@ -368,6 +368,77 @@ def _filters_active(filters: dict[str, Any]) -> bool:
     return bool(filters["kind"] or filters["weekday"])
 
 
+# Названия месяцев в родительном падеже — для подписи вида «сентябрь 2026».
+_MONTH_NAMES: tuple[str, ...] = (
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+)
+
+
+def _parse_month(raw: str | None, today: date) -> date:
+    """Разбирает параметр ``month`` из query-строки.
+
+    Ожидается формат ``ГГГГ-ММ``. Некорректные значения и месяцы из
+    будущего откатываются к текущему месяцу — чтобы тренер не мог
+    случайно «уехать» в будущее и увидеть пустые нули.
+
+    Args:
+        raw: Сырое значение параметра ``month``.
+        today: Сегодняшняя дата в поясе тренера.
+
+    Returns:
+        Первое число выбранного месяца.
+    """
+    current_start = today.replace(day=1)
+    cleaned = _clean(raw)
+    if not cleaned:
+        return current_start
+    try:
+        year_str, month_str = cleaned.split("-", 1)
+        parsed = date(int(year_str), int(month_str), 1)
+    except (ValueError, TypeError):
+        return current_start
+    if parsed > current_start:
+        return current_start
+    return parsed
+
+
+def _shift_month(month_start: date, delta: int) -> date:
+    """Сдвигает дату первого числа месяца на заданное число месяцев.
+
+    Args:
+        month_start: Первое число исходного месяца.
+        delta: Сдвиг в месяцах (может быть отрицательным).
+
+    Returns:
+        Первое число сдвинутого месяца.
+    """
+    total = month_start.year * 12 + (month_start.month - 1) + delta
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def _month_label(month_start: date) -> str:
+    """Собирает человекочитаемую подпись месяца.
+
+    Args:
+        month_start: Первое число месяца.
+
+    Returns:
+        Строка вида ``«сентябрь 2026»``.
+    """
+    return f"{_MONTH_NAMES[month_start.month - 1]} {month_start.year}"
+
+
 def _group_slots_by_entity(slots: list[ScheduleSlot]) -> dict[int, list[ScheduleSlot]]:
     """Группирует регулярные слоты по идентификатору ученика.
 
@@ -431,6 +502,7 @@ async def students_list(
     request: Request,
     kind: str | None = None,
     weekday: str | None = None,
+    month: str | None = None,
     tenant: Tenant = Depends(require_tenant),  # noqa: B008
     repo: Repository = Depends(get_repository),  # noqa: B008
 ) -> HTMLResponse:
@@ -440,12 +512,19 @@ async def students_list(
         request: Текущий HTTP-запрос.
         kind: Фильтр по типу сущности.
         weekday: Фильтр по дню недели.
+        month: Месяц показателей в формате ``ГГГГ-ММ`` (по умолчанию —
+            текущий). Позволяет заглянуть в прошлые месяцы.
         tenant: Тенант из cookie-сессии.
         repo: Фасад репозиториев.
 
     Returns:
         HTML-страница со списком учеников.
     """
+    today = _today_in_tenant_zone(tenant)
+    selected_month = _parse_month(month, today)
+    current_month = today.replace(day=1)
+    is_current_month = selected_month == current_month
+
     all_entities = await repo.entities.list_by_tenant(tenant.id)
     filters = _build_filters(kind, weekday)
 
@@ -457,7 +536,9 @@ async def students_list(
     }
 
     payment_service = PaymentService(repo)
-    monthly_by_entity = await payment_service.monthly_overview(tenant.id, all_entities)
+    monthly_by_entity = await payment_service.monthly_overview(
+        tenant.id, all_entities, today=selected_month
+    )
     currency = await payment_service.resolve_currency(tenant.id)
 
     entities = _apply_filters(
@@ -498,6 +579,14 @@ async def students_list(
             "currency": currency,
             "total_paid_students": total_paid_students,
             "total_debt_groups": total_debt_groups,
+            "selected_month": selected_month,
+            "month_value": selected_month.strftime("%Y-%m"),
+            "month_label": _month_label(selected_month),
+            "prev_month_value": _shift_month(selected_month, -1).strftime("%Y-%m"),
+            "next_month_value": (
+                None if is_current_month else _shift_month(selected_month, 1).strftime("%Y-%m")
+            ),
+            "is_current_month": is_current_month,
         },
     )
 
