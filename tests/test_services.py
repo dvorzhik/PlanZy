@@ -417,6 +417,148 @@ class TestPaymentService:
 
 
 # ----------------------------------------------------------------------
+# Распределение общей оплаты по группам
+# ----------------------------------------------------------------------
+
+
+class TestDistributeMonthlyGroupPayment:
+    """Проверки распределения одной суммы по группам за месяц."""
+
+    async def _group(self, repo: Repository, tenant_id: int, name: str) -> int:
+        """Создаёт группу и возвращает её id."""
+        entity = await repo.entities.create(tenant_id, name, entity_type="group")
+        await repo.session.flush()
+        return entity.id
+
+    async def _lesson(self, repo: Repository, tenant_id: int, entity_id: int, day: date) -> None:
+        """Добавляет проведённое занятие группы."""
+        await repo.lessons.create(tenant_id, entity_id, day, topic="Тренировка")
+
+    async def test_distributes_proportionally(self, repo: Repository, tenant_id: int) -> None:
+        """Сумма делится пропорционально числу занятий каждой группы."""
+        first = await self._group(repo, tenant_id, "Группа А")
+        second = await self._group(repo, tenant_id, "Группа Б")
+        await self._lesson(repo, tenant_id, first, TODAY)
+        await self._lesson(repo, tenant_id, first, TODAY)
+        await self._lesson(repo, tenant_id, first, TODAY)
+        await self._lesson(repo, tenant_id, second, TODAY)
+
+        payments = await PaymentService(repo).distribute_monthly_group_payment(
+            tenant_id,
+            total_amount=400.0,
+            payment_date=TODAY,
+            month=TODAY,
+        )
+
+        by_entity = {payment.entity_id: payment for payment in payments}
+        assert len(payments) == 2
+        assert by_entity[first].amount == 300.0
+        assert by_entity[second].amount == 100.0
+        assert by_entity[first].lessons_added == 3
+        assert by_entity[second].lessons_added == 1
+
+    async def test_shares_sum_equals_total(self, repo: Repository, tenant_id: int) -> None:
+        """Сумма долей при округлении совпадает с введённой суммой."""
+        first = await self._group(repo, tenant_id, "Группа А")
+        second = await self._group(repo, tenant_id, "Группа Б")
+        third = await self._group(repo, tenant_id, "Группа В")
+        for _ in range(2):
+            await self._lesson(repo, tenant_id, first, TODAY)
+            await self._lesson(repo, tenant_id, second, TODAY)
+            await self._lesson(repo, tenant_id, third, TODAY)
+
+        payments = await PaymentService(repo).distribute_monthly_group_payment(
+            tenant_id,
+            total_amount=100.0,
+            payment_date=TODAY,
+            month=TODAY,
+        )
+
+        assert round(sum(payment.amount or 0.0 for payment in payments), 2) == 100.0
+
+    async def test_skips_groups_without_lessons(self, repo: Repository, tenant_id: int) -> None:
+        """Группы без проведённых занятий не получают платёж."""
+        active = await self._group(repo, tenant_id, "Группа А")
+        await self._group(repo, tenant_id, "Пустая группа")
+        await self._lesson(repo, tenant_id, active, TODAY)
+
+        payments = await PaymentService(repo).distribute_monthly_group_payment(
+            tenant_id,
+            total_amount=120.0,
+            payment_date=TODAY,
+            month=TODAY,
+        )
+
+        assert len(payments) == 1
+        assert payments[0].entity_id == active
+        assert payments[0].amount == 120.0
+
+    async def test_ignores_lessons_of_other_months(self, repo: Repository, tenant_id: int) -> None:
+        """Занятия прошлого месяца не учитываются при распределении."""
+        group = await self._group(repo, tenant_id, "Группа А")
+        await self._lesson(repo, tenant_id, group, date(2026, 8, 10))
+
+        with pytest.raises(ValueError, match="нет групп"):
+            await PaymentService(repo).distribute_monthly_group_payment(
+                tenant_id,
+                total_amount=120.0,
+                payment_date=TODAY,
+                month=TODAY,
+            )
+
+    async def test_ignores_students(self, repo: Repository, tenant_id: int) -> None:
+        """Индивидуальные ученики не участвуют в распределении."""
+        student = await repo.entities.create(tenant_id, "Миша", entity_type="student")
+        await self._lesson(repo, tenant_id, student.id, TODAY)
+
+        with pytest.raises(ValueError, match="нет групп"):
+            await PaymentService(repo).distribute_monthly_group_payment(
+                tenant_id,
+                total_amount=120.0,
+                payment_date=TODAY,
+                month=TODAY,
+            )
+
+    async def test_requires_positive_amount(self, repo: Repository, tenant_id: int) -> None:
+        """Нулевая или отрицательная сумма отклоняется."""
+        with pytest.raises(ValueError, match="положительной"):
+            await PaymentService(repo).distribute_monthly_group_payment(
+                tenant_id,
+                total_amount=0.0,
+                payment_date=TODAY,
+                month=TODAY,
+            )
+
+    async def test_requires_groups_with_lessons(self, repo: Repository, tenant_id: int) -> None:
+        """Без групп с занятиями распределять нечего."""
+        await self._group(repo, tenant_id, "Группа А")
+
+        with pytest.raises(ValueError, match="нет групп"):
+            await PaymentService(repo).distribute_monthly_group_payment(
+                tenant_id,
+                total_amount=120.0,
+                payment_date=TODAY,
+                month=TODAY,
+            )
+
+    async def test_uses_single_payment_date(self, repo: Repository, tenant_id: int) -> None:
+        """Дата платежа одинакова для всех созданных платежей."""
+        first = await self._group(repo, tenant_id, "Группа А")
+        second = await self._group(repo, tenant_id, "Группа Б")
+        await self._lesson(repo, tenant_id, first, TODAY)
+        await self._lesson(repo, tenant_id, second, TODAY)
+
+        payments = await PaymentService(repo).distribute_monthly_group_payment(
+            tenant_id,
+            total_amount=200.0,
+            payment_date=date(2026, 9, 20),
+            month=TODAY,
+        )
+
+        assert {payment.payment_date for payment in payments} == {date(2026, 9, 20)}
+
+
+# ----------------------------------------------------------------------
 # LessonService
 # ----------------------------------------------------------------------
 

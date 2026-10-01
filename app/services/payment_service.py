@@ -338,6 +338,99 @@ class PaymentService:
             }
         return overview
 
+    async def distribute_monthly_group_payment(
+        self,
+        tenant_id: int,
+        *,
+        total_amount: float,
+        payment_date: date,
+        month: date,
+        currency: str | None = None,
+    ) -> list[Payment]:
+        """Распределяет общую сумму оплаты по группам за месяц.
+
+        Тренер вносит одну общую сумму за месяц, а система делит её между
+        группами пропорционально числу проведённых занятий каждой группы
+        и создаёт отдельный платёж на каждую группу. Так оплата попадает
+        в учёт именно той группы, к которой относится.
+
+        Распределение строго аддитивно: сумма долей равна ``total_amount``.
+        Остаток от округления (копейки) добавляется к последней группе,
+        чтобы не терять деньги при дроблении.
+
+        Группы без проведённых занятий в месяце пропускаются — доля 0 не
+        создаёт пустой платёж. Каждой группе к балансу добавляется число
+        её проведённых занятий (``lessons_added``): оплата ровно
+        соответствует фактически проведённым занятиям.
+
+        Args:
+            tenant_id: Идентификатор тенанта.
+            total_amount: Общая сумма за месяц (положительная).
+            payment_date: Дата платежа. Одна на все созданные платежи.
+            month: Любая дата внутри месяца, за который вносится оплата.
+            currency: Код валюты. По умолчанию берётся из настроек тенанта.
+
+        Returns:
+            Список созданных платежей (по одному на группу).
+
+        Raises:
+            ValueError: Если сумма не положительна или в месяце нет групп
+                с проведёнными занятиями.
+        """
+        if total_amount is None or total_amount <= 0:
+            raise ValueError("Сумма распределения должна быть положительной.")
+
+        month_start, month_end = self.month_bounds(month)
+
+        conducted_map = await self._repo.lessons.conducted_counts_in_period(
+            tenant_id, month_start, month_end
+        )
+        entities = await self._repo.entities.list_by_tenant(tenant_id)
+        group_ids = [entity.id for entity in entities if entity.entity_type == "group"]
+
+        shares = {
+            entity_id: conducted_map.get(entity_id, 0)
+            for entity_id in group_ids
+            if conducted_map.get(entity_id, 0) > 0
+        }
+        total_lessons = sum(shares.values())
+        if total_lessons == 0:
+            raise ValueError("В выбранном месяце нет групп с проведёнными занятиями.")
+
+        effective_currency = currency or await self.resolve_currency(tenant_id)
+        rounded_total = round(total_amount, 2)
+
+        payments: list[Payment] = []
+        distributed = 0.0
+        last_index = len(shares) - 1
+        for index, (entity_id, lessons) in enumerate(shares.items()):
+            if index == last_index:
+                # Последней группе отдаём остаток, чтобы сумма долей точно
+                # совпала с введённой суммой.
+                share = round(rounded_total - distributed, 2)
+            else:
+                share = round(rounded_total * lessons / total_lessons, 2)
+                distributed += share
+            payment = await self.register_payment(
+                tenant_id,
+                entity_id,
+                amount=share,
+                lessons_added=lessons,
+                payment_date=payment_date,
+                currency=effective_currency,
+                infer_lessons=False,
+            )
+            payments.append(payment)
+
+        logger.info(
+            "Распределено оплат по группам: тенант=%s сумма=%s платежей=%s месяц=%s",
+            tenant_id,
+            rounded_total,
+            len(payments),
+            month_start,
+        )
+        return payments
+
     @staticmethod
     def _pluralize_lessons(count: int) -> str:
         """Склоняет слово «занятие» по числу.

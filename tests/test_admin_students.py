@@ -297,9 +297,7 @@ class TestStudentsList:
         # 1 проведённое занятие × 100 − 0 платежей = 100.
         assert "100" in response.text
 
-    async def test_list_shows_selected_month_label(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_list_shows_selected_month_label(self, client: AsyncClient) -> None:
         """При выборе прошлого месяца шапка показывает его подпись."""
         response = await client.get("/admin/students?month=2026-03")
 
@@ -359,9 +357,7 @@ class TestStudentsList:
         # Текущий месяц никогда не совпадёт с далёким 2999-м.
         assert _month_label(future) not in response.text
 
-    async def test_list_has_month_navigation_links(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_list_has_month_navigation_links(self, client: AsyncClient) -> None:
         """Переключатель месяцев содержит ссылки на предыдущий месяц."""
         response = await client.get("/admin/students")
 
@@ -1506,3 +1502,98 @@ class TestStudentHelpers:
         assert _month_label(date(2026, 9, 1)) == "сентябрь 2026"
         assert _month_label(date(2026, 10, 1)) == "октябрь 2026"
 
+
+class TestGroupsMonthlyPayment:
+    """Проверки распределения общей оплаты за месяц по группам (дашборд)."""
+
+    async def test_route_distributes_across_groups(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """POST создаёт по платежу на каждую группу и редиректит на дашборд."""
+        first = await repo.entities.create(
+            tenant_id=tenant_id, name="Группа А", entity_type="group"
+        )
+        second = await repo.entities.create(
+            tenant_id=tenant_id, name="Группа Б", entity_type="group"
+        )
+        for _ in range(3):
+            await repo.lessons.create(tenant_id, first.id, LESSON_DATE, topic="Тренировка")
+        await repo.lessons.create(tenant_id, second.id, LESSON_DATE, topic="Тренировка")
+        await repo.session.flush()
+
+        response = await client.post(
+            "/admin/groups/monthly-payment",
+            data={
+                "total_amount": "400",
+                "month": "2026-09",
+                "payment_date": "2026-09-30",
+            },
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin?distributed=1"
+
+        first_payments = await repo.payments.list_by_entity(tenant_id, first.id)
+        second_payments = await repo.payments.list_by_entity(tenant_id, second.id)
+        assert first_payments[0].amount == 300.0
+        assert second_payments[0].amount == 100.0
+
+    async def test_route_writes_audit_per_group(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """Каждый созданный платёж фиксируется в журнале."""
+        group = await repo.entities.create(
+            tenant_id=tenant_id, name="Группа А", entity_type="group"
+        )
+        await repo.lessons.create(tenant_id, group.id, LESSON_DATE, topic="Тренировка")
+        await repo.session.flush()
+
+        await client.post(
+            "/admin/groups/monthly-payment",
+            data={"total_amount": "120", "month": "2026-09"},
+        )
+
+        entries = await repo.audit.list_by_tenant(tenant_id)
+        assert sum(1 for entry in entries if entry.action == "payment_registered") == 1
+
+    async def test_route_invalid_amount_returns_error(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """Некорректная сумма возвращает ошибку и не создаёт платежей."""
+        group = await repo.entities.create(
+            tenant_id=tenant_id, name="Группа А", entity_type="group"
+        )
+        await repo.lessons.create(tenant_id, group.id, LESSON_DATE, topic="Тренировка")
+        await repo.session.flush()
+
+        response = await client.post(
+            "/admin/groups/monthly-payment",
+            data={"total_amount": "0", "month": "2026-09"},
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+        assert not await repo.payments.list_by_entity(tenant_id, group.id)
+
+    async def test_route_without_group_lessons_returns_error(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """Если групп с занятиями нет, возвращается ошибка."""
+        await repo.entities.create(tenant_id=tenant_id, name="Группа А", entity_type="group")
+
+        response = await client.post(
+            "/admin/groups/monthly-payment",
+            data={"total_amount": "120", "month": "2026-09"},
+        )
+
+        assert response.status_code == 303
+        assert "error=" in response.headers["location"]
+
+    async def test_route_requires_session(self, anon_client: AsyncClient) -> None:
+        """Без сессии распределение недоступно."""
+        response = await anon_client.post(
+            "/admin/groups/monthly-payment",
+            data={"total_amount": "120", "month": "2026-09"},
+        )
+
+        assert response.status_code == 401
