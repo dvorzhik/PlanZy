@@ -797,10 +797,10 @@ class TestPaymentServiceMonthlyDebt:
 
         assert await payment_service.monthly_debt(tenant_id, group.id, today=today) == 300.0
 
-    async def test_monthly_debt_ignores_unconducted_lessons(
+    async def test_monthly_debt_counts_lessons_without_note(
         self, payment_service: PaymentService, repo: Repository, tenant_id: int
     ) -> None:
-        """Занятия без «Примечания» не считаются проведёнными."""
+        """Занятие без «Примечания» тоже считается проведённым."""
         await repo.tenants.update_settings(tenant_id, lesson_price=100.0)
         group = await repo.entities.create(tenant_id=tenant_id, name="Группа", entity_type="group")
         today = date(2026, 9, 18)
@@ -808,18 +808,18 @@ class TestPaymentServiceMonthlyDebt:
             tenant_id=tenant_id,
             entity_id=group.id,
             lesson_date=date(2026, 9, 10),
-            topic="Проведено",
+            topic="С примечанием",
             attendance="Аня",
         )
         await repo.lessons.create(
             tenant_id=tenant_id,
             entity_id=group.id,
             lesson_date=date(2026, 9, 11),
-            topic="Не проведено",
+            topic="Без примечания",
             attendance=None,
         )
 
-        assert await payment_service.monthly_debt(tenant_id, group.id, today=today) == 100.0
+        assert await payment_service.monthly_debt(tenant_id, group.id, today=today) == 200.0
 
     async def test_monthly_debt_ignores_other_months(
         self, payment_service: PaymentService, repo: Repository, tenant_id: int

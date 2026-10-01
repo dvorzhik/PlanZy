@@ -406,19 +406,19 @@ class TestLessonRepository:
 
         assert counts == {first: 2, second: 1}
 
-    async def test_conducted_counts_in_period_ignores_unconducted(
+    async def test_conducted_counts_in_period_counts_all_lessons(
         self, repo: Repository, tenant_id: int
     ) -> None:
-        """Занятия без «Примечания» не считаются проведёнными."""
+        """Любое занятие за период считается проведённым, даже без примечания."""
         entity_id = await _seed_entity(repo, tenant_id)
-        await repo.lessons.create(tenant_id, entity_id, MONDAY, topic="Пустое")
+        await repo.lessons.create(tenant_id, entity_id, MONDAY, topic="Без примечания")
         await repo.lessons.create(
-            tenant_id, entity_id, TUESDAY, topic="Проведено", attendance="был"
+            tenant_id, entity_id, TUESDAY, topic="С примечанием", attendance="был"
         )
 
         counts = await repo.lessons.conducted_counts_in_period(tenant_id, MONDAY, TUESDAY)
 
-        assert counts == {entity_id: 1}
+        assert counts == {entity_id: 2}
 
     async def test_conducted_counts_in_period_empty(self, repo: Repository, tenant_id: int) -> None:
         """Без проведённых занятий карта пуста."""

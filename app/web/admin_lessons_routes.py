@@ -394,7 +394,8 @@ async def lesson_create(
     parsed_date = _parse_date(lesson_date) or _today_in_tenant_zone(tenant)
     clean_topic = _clean(topic)[:MAX_TOPIC_LENGTH] or "—"
     # Посещаемость — свободный текст: для группы это список участников,
-    # для ученика — короткая отметка. Пустое значение = занятие не проведено.
+    # для ученика — короткая отметка. «Примечание» носит справочный
+    # характер и не влияет на учёт проведённых занятий.
     clean_attendance = _clean(attendance)[:MAX_ATTENDANCE_LENGTH] or None
 
     lesson = await repo.lessons.create(

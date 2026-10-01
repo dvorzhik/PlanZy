@@ -395,9 +395,9 @@ class LessonRepository:
     ) -> int:
         """Считает проведённые занятия сущности за период.
 
-        Проведённым считается занятие с заполненным полем ``attendance``
-        (в кабинете оно называется «Примечание»): пустое значение означает,
-        что занятие не состоялось и с баланса не списывается.
+        Проведённым считается любое занесённое в журнал занятие за период.
+        Поле ``attendance`` («Примечание») носит справочный характер и на
+        подсчёт не влияет: занятие может быть отмечено без примечания.
 
         Args:
             tenant_id: Идентификатор тенанта.
@@ -413,8 +413,6 @@ class LessonRepository:
             Lesson.entity_id == entity_id,
             Lesson.lesson_date >= date_from,
             Lesson.lesson_date <= date_to,
-            Lesson.attendance.is_not(None),
-            func.trim(Lesson.attendance) != "",
         )
         result = await self.session.execute(stmt)
         return int(result.scalar_one())
@@ -428,7 +426,8 @@ class LessonRepository:
         """Считает проведённые занятия всех сущностей тенанта за период.
 
         Один запрос вместо отдельного обращения на каждого ученика (N+1).
-        Проведённым считается занятие с заполненным «Примечанием».
+        Проведённым считается любое занесённое в журнал занятие за период;
+        поле «Примечание» на подсчёт не влияет.
 
         Args:
             tenant_id: Идентификатор тенанта.
@@ -445,8 +444,6 @@ class LessonRepository:
                 Lesson.tenant_id == tenant_id,
                 Lesson.lesson_date >= date_from,
                 Lesson.lesson_date <= date_to,
-                Lesson.attendance.is_not(None),
-                func.trim(Lesson.attendance) != "",
             )
             .group_by(Lesson.entity_id)
         )
