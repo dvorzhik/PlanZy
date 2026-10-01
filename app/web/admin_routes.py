@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
@@ -19,13 +19,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import Tenant
+from app.db.models import Entity, Tenant
 from app.db.repository import Repository
 from app.services.auth_service import (
     DEFAULT_SESSION_TTL_DAYS,
     SESSION_COOKIE_NAME,
     AuthService,
 )
+from app.services.payment_service import PaymentService
 from app.services.schedule_service import ScheduleService
 from app.web.dependencies import (
     get_auth_service,
@@ -42,6 +43,22 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 # Путь дашборда — цель редиректа после успешного входа.
 DASHBOARD_PATH = "/admin"
+
+# Русские названия месяцев в именительном падеже для подписи «сентябрь 2026».
+_MONTH_NAMES: tuple[str, ...] = (
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+)
 
 
 def _set_session_cookie(response: Response, token: str, *, ttl_days: int) -> None:
@@ -145,7 +162,64 @@ async def login_by_token(
     return response
 
 
-def _today_in_tenant_zone(tenant: Tenant) -> datetime.date:
+def _shift_month(month_start: date, delta: int) -> date:
+    """Сдвигает первое число месяца на заданное количество месяцев.
+
+    Args:
+        month_start: Первое число исходного месяца.
+        delta: Сдвиг в месяцах (может быть отрицательным).
+
+    Returns:
+        Первое число сдвинутого месяца.
+    """
+    total = month_start.year * 12 + (month_start.month - 1) + delta
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def _month_label(month_start: date) -> str:
+    """Собирает человекочитаемую подпись месяца.
+
+    Args:
+        month_start: Первое число месяца.
+
+    Returns:
+        Строка вида ``«сентябрь 2026»``.
+    """
+    return f"{_MONTH_NAMES[month_start.month - 1]} {month_start.year}"
+
+
+def _payments_split(
+    entities: list[Entity],
+    overview: dict[int, dict[str, float | int]],
+) -> dict[str, float]:
+    """Суммирует оплаты месяца отдельно по ученикам и группам.
+
+    Args:
+        entities: Все ученики и группы тенанта.
+        overview: Месячные показатели от ``PaymentService.monthly_overview``.
+
+    Returns:
+        Словарь ``{"students": ..., "groups": ..., "total": ...}`` с суммами
+        оплат за месяц.
+    """
+    students_paid = sum(
+        float(overview[item.id]["paid"])
+        for item in entities
+        if item.entity_type == "student" and item.id in overview
+    )
+    groups_paid = sum(
+        float(overview[item.id]["paid"])
+        for item in entities
+        if item.entity_type == "group" and item.id in overview
+    )
+    return {
+        "students": round(students_paid, 2),
+        "groups": round(groups_paid, 2),
+        "total": round(students_paid + groups_paid, 2),
+    }
+
+
+def _today_in_tenant_zone(tenant: Tenant) -> date:
     """Возвращает сегодняшнюю дату в часовом поясе тренера.
 
     Часовой пояс берётся из настроек тенанта, при некорректном значении
@@ -193,6 +267,18 @@ async def dashboard(
     today_schedule = await schedule_service.get_day_schedule(tenant.id, today)
     tomorrow_schedule = await schedule_service.get_day_schedule(tenant.id, tomorrow)
 
+    # Оплаты: отдельно по ученикам и группам за текущий и предыдущий месяц.
+    payment_service = PaymentService(repo)
+    current_month = today.replace(day=1)
+    prev_month = _shift_month(current_month, -1)
+    currency = await payment_service.resolve_currency(tenant.id)
+    current_overview = await payment_service.monthly_overview(
+        tenant.id, entities, today=current_month
+    )
+    prev_overview = await payment_service.monthly_overview(tenant.id, entities, today=prev_month)
+    current_payments = _payments_split(entities, current_overview)
+    prev_payments = _payments_split(entities, prev_overview)
+
     return templates.TemplateResponse(
         request=request,
         name="admin/dashboard.html",
@@ -209,6 +295,13 @@ async def dashboard(
             "tomorrow": tomorrow,
             "tomorrow_lessons": tomorrow_schedule,
             "tomorrow_count": len(tomorrow_schedule),
+            "currency": currency,
+            "current_month": current_month,
+            "prev_month": prev_month,
+            "current_month_label": _month_label(current_month),
+            "prev_month_label": _month_label(prev_month),
+            "current_payments": current_payments,
+            "prev_payments": prev_payments,
         },
     )
 

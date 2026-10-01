@@ -444,6 +444,62 @@ class TestAdminSessionRoutes:
         assert "Завтрашний" in response.text
         assert "19:00" in response.text
 
+    async def test_dashboard_shows_payments_block(
+        self, client: AsyncClient, admin_token: str, repo: Repository, tenant_id: int
+    ) -> None:
+        """Дашборд показывает блок оплат за предыдущий и текущий месяц."""
+        await client.get(f"/admin/{admin_token}", follow_redirects=False)
+        response = await client.get("/admin")
+
+        assert response.status_code == 200
+        assert "Оплаты" in response.text
+        assert "Ученики" in response.text
+        assert "Группы" in response.text
+        assert "текущий" in response.text
+
+    async def test_dashboard_splits_payments_by_kind_and_month(
+        self, client: AsyncClient, admin_token: str, repo: Repository, tenant_id: int
+    ) -> None:
+        """Оплаты разнесены по типу сущности и месяцу (текущий/предыдущий)."""
+        student = await repo.entities.create(
+            tenant_id=tenant_id, name="Оплатник", entity_type="student"
+        )
+        group = await repo.entities.create(
+            tenant_id=tenant_id, name="Оплат-группа", entity_type="group"
+        )
+
+        today = datetime.now(UTC).date()
+        current_start = today.replace(day=1)
+        prev_start = (current_start - timedelta(days=1)).replace(day=1)
+
+        # Текущий месяц: ученик 100 + группа 200 = 300.
+        await repo.payments.create(
+            tenant_id=tenant_id, entity_id=student.id, payment_date=current_start, amount=100.0
+        )
+        await repo.payments.create(
+            tenant_id=tenant_id, entity_id=group.id, payment_date=current_start, amount=200.0
+        )
+        # Предыдущий месяц: ученик 50 + группа 70 = 120.
+        await repo.payments.create(
+            tenant_id=tenant_id, entity_id=student.id, payment_date=prev_start, amount=50.0
+        )
+        await repo.payments.create(
+            tenant_id=tenant_id, entity_id=group.id, payment_date=prev_start, amount=70.0
+        )
+
+        await client.get(f"/admin/{admin_token}", follow_redirects=False)
+        response = await client.get("/admin")
+
+        assert response.status_code == 200
+        # Текущий месяц: 300 всего, 100 ученики, 200 группы.
+        assert "₪ 300" in response.text
+        assert "₪ 100" in response.text
+        assert "₪ 200" in response.text
+        # Предыдущий месяц: 120 всего, 50 ученики, 70 группы.
+        assert "₪ 120" in response.text
+        assert "₪ 50" in response.text
+        assert "₪ 70" in response.text
+
     async def test_session_status_without_session(self, client: AsyncClient) -> None:
         """Служебный роут сообщает об отсутствии сессии."""
         response = await client.get("/admin/session/status")
