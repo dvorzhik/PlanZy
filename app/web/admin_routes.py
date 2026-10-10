@@ -48,6 +48,9 @@ DASHBOARD_PATH = "/admin"
 # Верхняя граница суммы распределяемого платежа — защита от опечаток.
 MAX_PAYMENT_AMOUNT = 1_000_000.0
 
+# Сколько последних оплат групп показывать под формой распределения.
+GROUP_PAYMENTS_LIMIT = 100
+
 # Русские названия месяцев в именительном падеже для подписи «сентябрь 2026».
 _MONTH_NAMES: tuple[str, ...] = (
     "январь",
@@ -382,7 +385,15 @@ async def dashboard(
     distribute_month = _shift_month(current_month, -1)
     distribute_month_options = _month_options()
     distributed = _clean_flag(request.query_params.get("distributed"))
+    deleted = _clean_flag(request.query_params.get("deleted"))
     error = request.query_params.get("error")
+
+    # Записи об оплатах групп: показываем под формой распределения,
+    # чтобы тренер мог удалить ошибочно внесённую оплату.
+    group_payments = await payment_service.list_group_payments(
+        tenant.id, limit=GROUP_PAYMENTS_LIMIT
+    )
+    entity_names = {entity.id: entity.name for entity in entities}
 
     return templates.TemplateResponse(
         request=request,
@@ -410,6 +421,9 @@ async def dashboard(
             "distribute_month": distribute_month,
             "distribute_month_options": distribute_month_options,
             "distributed": distributed,
+            "deleted": deleted,
+            "group_payments": group_payments,
+            "entity_names": entity_names,
             "error": error,
         },
     )
@@ -486,6 +500,40 @@ async def groups_monthly_payment(
     )
 
     return RedirectResponse(url="/admin?distributed=1", status_code=303)
+
+
+@router.post("/groups/payments/{payment_id}/delete", include_in_schema=False)
+async def group_payment_delete(
+    payment_id: int,
+    tenant: Tenant = Depends(require_tenant),  # noqa: B008
+    repo: Repository = Depends(get_repository),  # noqa: B008
+) -> RedirectResponse:
+    """Удаляет ошибочно внесённую оплату группы.
+
+    Тренер может отменить платёж, занесённый с неверной суммой или датой.
+    Удаление возможно только в рамках своего тенанта; факт удаления
+    пишется в журнал действий.
+
+    Args:
+        payment_id: Идентификатор платежа.
+        tenant: Тенант из cookie-сессии.
+        repo: Фасад репозиториев.
+
+    Returns:
+        Редирект на дашборд с флагом успеха.
+    """
+    removed = await PaymentService(repo).delete_payment(tenant.id, payment_id)
+    if removed is not None:
+        await AuditService(repo).log_payment_deleted(
+            tenant.id,
+            removed.entity_id,
+            amount=removed.amount,
+            lessons_added=removed.lessons_added,
+            actor="trainer",
+        )
+        logger.info("Удалена оплата группы: tenant=%s payment=%s", tenant.id, payment_id)
+
+    return RedirectResponse(url="/admin?deleted=1", status_code=303)
 
 
 @router.post("/logout", include_in_schema=False)

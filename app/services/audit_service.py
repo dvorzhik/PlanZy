@@ -19,6 +19,7 @@ ACTION_STUDENT_CREATED = "student_created"
 ACTION_STUDENT_UPDATED = "student_updated"
 ACTION_STUDENT_DELETED = "student_deleted"
 ACTION_PAYMENT_REGISTERED = "payment_registered"
+ACTION_PAYMENT_DELETED = "payment_deleted"
 ACTION_SLOT_CREATED = "slot_created"
 ACTION_SLOT_UPDATED = "slot_updated"
 ACTION_SLOT_DELETED = "slot_deleted"
@@ -45,6 +46,7 @@ ACTION_LABELS = {
     ACTION_STUDENT_UPDATED: "Изменён ученик",
     ACTION_STUDENT_DELETED: "Удалён ученик",
     ACTION_PAYMENT_REGISTERED: "Внесена оплата",
+    ACTION_PAYMENT_DELETED: "Удалена оплата",
     ACTION_SLOT_CREATED: "Добавлено занятие в расписание",
     ACTION_SLOT_UPDATED: "Изменено занятие в расписании",
     ACTION_SLOT_DELETED: "Удалено занятие из расписания",
@@ -192,6 +194,34 @@ class AuditService:
         return await self.log(
             tenant_id,
             ACTION_PAYMENT_REGISTERED,
+            {"entity_id": entity_id, "amount": amount, "lessons_added": lessons_added},
+            actor=actor,
+        )
+
+    async def log_payment_deleted(
+        self,
+        tenant_id: int,
+        entity_id: int,
+        *,
+        amount: float | None = None,
+        lessons_added: int | None = None,
+        actor: str = ACTOR_TRAINER,
+    ) -> AuditLog:
+        """Записывает удаление оплаты ученика или группы.
+
+        Args:
+            tenant_id: Идентификатор тенанта.
+            entity_id: Идентификатор ученика или группы.
+            amount: Сумма удалённого платежа.
+            lessons_added: Сколько занятий было зачтено платежом.
+            actor: Автор действия.
+
+        Returns:
+            Созданная запись журнала.
+        """
+        return await self.log(
+            tenant_id,
+            ACTION_PAYMENT_DELETED,
             {"entity_id": entity_id, "amount": amount, "lessons_added": lessons_added},
             actor=actor,
         )

@@ -186,6 +186,58 @@ class PaymentService:
         """Возвращает суммарно оплаченную сумму по сущности."""
         return await self._repo.payments.total_amount(tenant_id, entity_id)
 
+    async def list_group_payments(
+        self,
+        tenant_id: int,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        limit: int | None = None,
+    ) -> list[Payment]:
+        """Возвращает платежи групп тенанта, новые сверху.
+
+        Args:
+            tenant_id: Идентификатор тенанта.
+            date_from: Начало периода включительно (необязательно).
+            date_to: Конец периода включительно (необязательно).
+            limit: Максимальное число записей (необязательно).
+
+        Returns:
+            Список платежей по группам.
+        """
+        return await self._repo.payments.list_group_payments(
+            tenant_id, date_from=date_from, date_to=date_to, limit=limit
+        )
+
+    async def delete_payment(self, tenant_id: int, payment_id: int) -> Payment | None:
+        """Удаляет платёж в рамках тенанта.
+
+        Используется, чтобы отменить ошибочно внесённую оплату. Возвращает
+        удалённую запись (для журнала действий) либо ``None``, если платёж
+        не найден или принадлежит другому тенанту.
+
+        Args:
+            tenant_id: Идентификатор тенанта.
+            payment_id: Идентификатор платежа.
+
+        Returns:
+            Удалённый платёж или ``None``.
+        """
+        payment = await self._repo.payments.get_by_id(tenant_id, payment_id)
+        if payment is None:
+            return None
+        removed = await self._repo.payments.delete(tenant_id, payment_id)
+        if not removed:
+            return None
+        logger.info(
+            "Удалён платёж id=%s entity_id=%s amount=%s",
+            payment_id,
+            payment.entity_id,
+            payment.amount,
+        )
+        return payment
+
+
     @staticmethod
     def month_bounds(reference: date) -> tuple[date, date]:
         """Возвращает границы календарного месяца, содержащего дату.

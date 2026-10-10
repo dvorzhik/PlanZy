@@ -529,6 +529,43 @@ class PaymentRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_group_payments(
+        self,
+        tenant_id: int,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        limit: int | None = None,
+    ) -> list[Payment]:
+        """Возвращает платежи групп тенанта, новые сверху.
+
+        Используется дашбордом для блока «Оплата групп за месяц»: тренер
+        видит внесённые платежи и может удалить ошибочную запись.
+
+        Args:
+            tenant_id: Идентификатор тенанта.
+            date_from: Начало периода включительно (необязательно).
+            date_to: Конец периода включительно (необязательно).
+            limit: Максимальное число записей (необязательно).
+
+        Returns:
+            Список платежей только по сущностям типа «группа».
+        """
+        stmt = (
+            select(Payment)
+            .join(Entity, Entity.id == Payment.entity_id)
+            .where(Payment.tenant_id == tenant_id, Entity.entity_type == "group")
+            .order_by(Payment.payment_date.desc(), Payment.id.desc())
+        )
+        if date_from is not None:
+            stmt = stmt.where(Payment.payment_date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(Payment.payment_date <= date_to)
+        if limit:
+            stmt = stmt.limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_last_payment(self, tenant_id: int, entity_id: int) -> Payment | None:
         """Возвращает последний платёж сущности (для квитанции на карточке)."""
         payments = await self.list_by_entity(tenant_id, entity_id, limit=1)

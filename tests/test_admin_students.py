@@ -1597,3 +1597,132 @@ class TestGroupsMonthlyPayment:
         )
 
         assert response.status_code == 401
+
+
+class TestGroupPaymentDeletion:
+    """Проверки списка оплат групп и их удаления с дашборда."""
+
+    async def test_dashboard_lists_group_payments(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """Дашборд показывает внесённые оплаты групп и кнопку удаления."""
+        group = await repo.entities.create(
+            tenant_id=tenant_id, name="Группа Лидер", entity_type="group"
+        )
+        payment = await repo.payments.create(
+            tenant_id=tenant_id,
+            entity_id=group.id,
+            payment_date=date(2026, 9, 15),
+            amount=450.0,
+            lessons_added=3,
+        )
+        await repo.session.flush()
+
+        response = await client.get("/admin")
+
+        assert response.status_code == 200
+        assert "Внесённые оплаты групп" in response.text
+        assert "Группа Лидер" in response.text
+        assert "450" in response.text
+        assert f"/admin/groups/payments/{payment.id}/delete" in response.text
+
+    async def test_dashboard_ignores_student_payments(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """В список оплат групп не попадают платежи учеников."""
+        student = await repo.entities.create(
+            tenant_id=tenant_id, name="Оплатник-одиночка", entity_type="student"
+        )
+        await repo.payments.create(
+            tenant_id=tenant_id,
+            entity_id=student.id,
+            payment_date=date(2026, 9, 15),
+            amount=999.0,
+        )
+        await repo.session.flush()
+
+        response = await client.get("/admin")
+
+        assert response.status_code == 200
+        assert "Оплатник-одиночка" not in response.text
+
+    async def test_delete_route_removes_payment(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """POST удаления убирает платёж и редиректит на дашборд."""
+        group = await repo.entities.create(
+            tenant_id=tenant_id, name="Группа А", entity_type="group"
+        )
+        payment = await repo.payments.create(
+            tenant_id=tenant_id,
+            entity_id=group.id,
+            payment_date=date(2026, 9, 15),
+            amount=300.0,
+        )
+        await repo.session.flush()
+
+        response = await client.post(
+            f"/admin/groups/payments/{payment.id}/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin?deleted=1"
+        assert await repo.payments.get_by_id(tenant_id, payment.id) is None
+
+    async def test_delete_route_writes_audit(
+        self, client: AsyncClient, repo: Repository, tenant_id: int
+    ) -> None:
+        """Удаление оплаты фиксируется в журнале действий."""
+        group = await repo.entities.create(
+            tenant_id=tenant_id, name="Группа А", entity_type="group"
+        )
+        payment = await repo.payments.create(
+            tenant_id=tenant_id,
+            entity_id=group.id,
+            payment_date=date(2026, 9, 15),
+            amount=300.0,
+            lessons_added=2,
+        )
+        await repo.session.flush()
+
+        await client.post(f"/admin/groups/payments/{payment.id}/delete", follow_redirects=False)
+
+        entries = await repo.audit.list_by_tenant(tenant_id)
+        assert sum(1 for entry in entries if entry.action == "payment_deleted") == 1
+
+    async def test_delete_unknown_is_idempotent(self, client: AsyncClient) -> None:
+        """Удаление несуществующего платежа не ломает страницу."""
+        response = await client.post(
+            "/admin/groups/payments/999999/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin?deleted=1"
+
+    async def test_delete_scoped_to_tenant(
+        self, client: AsyncClient, repo: Repository
+    ) -> None:
+        """Чужой платёж удалить нельзя."""
+        other = await repo.tenants.create(telegram_user_id=999_000_444, name="Другой тренер")
+        foreign_group = await repo.entities.create(
+            tenant_id=other.id, name="Чужая группа", entity_type="group"
+        )
+        foreign = await repo.payments.create(
+            tenant_id=other.id,
+            entity_id=foreign_group.id,
+            payment_date=date(2026, 9, 15),
+            amount=300.0,
+        )
+        await repo.session.flush()
+
+        await client.post(f"/admin/groups/payments/{foreign.id}/delete", follow_redirects=False)
+
+        assert await repo.payments.get_by_id(other.id, foreign.id) is not None
+
+    async def test_delete_requires_session(self, anon_client: AsyncClient) -> None:
+        """Без сессии удаление недоступно."""
+        response = await anon_client.post(
+            "/admin/groups/payments/1/delete", follow_redirects=False
+        )
+
+        assert response.status_code == 401
